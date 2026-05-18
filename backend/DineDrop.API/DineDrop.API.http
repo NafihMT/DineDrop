@@ -1,0 +1,6 @@
+@DineDrop.API_HostAddress = http://localhost:5070
+
+GET {{DineDrop.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

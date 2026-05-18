@@ -1,0 +1,56 @@
+# ==========================================
+# DineDrop Top-Level .gitignore
+# Covering .NET Backend & React/Vite Frontend
+# ==========================================
+
+# 1. General OS & IDE Files
+# -------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# 2. .NET Backend Specific
+# ------------------------
+bin/
+obj/
+logs/
+*.log
+*.txt
+!backend/**/README.md
+
+# Sensitive Configs & Secrets
+appsettings.json
+appsettings.Development.json
+appsettings.Production.json
+appsettings.*.json
+secrets.json
+*.pfx
+
+# Uploads directory
+**/wwwroot/uploads/**
+!**/wwwroot/uploads/.gitkeep
+
+# 3. Node / React Frontend Specific
+# ---------------------------------
+node_modules/
+dist/
+dist-ssr/
+build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.eslintcache
+
+# Env files
+.env
+.env.local
+.env.*.local
