@@ -9,6 +9,9 @@ namespace DineDrop.Application.Modules.Users.DTOs
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
+        public string? ProfileImageUrl { get; set; }
+        public DateTime? DateOfBirth { get; set; }
+        public string? Gender { get; set; }
         public decimal WalletBalance { get; set; }
         public List<UserAddressDto> Addresses { get; set; } = new();
     }
@@ -17,6 +20,9 @@ namespace DineDrop.Application.Modules.Users.DTOs
     {
         public string Name { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
+        public string? ProfileImageUrl { get; set; }
+        public DateTime? DateOfBirth { get; set; }
+        public string? Gender { get; set; }
     }
 
     public class UserAddressDto

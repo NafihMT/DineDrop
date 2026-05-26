@@ -77,6 +77,8 @@ namespace DineDrop.Infrastructure.Services
             var totalUsers = await _context.Users.CountAsync(u => u.Role == UserRole.User);
             var activeOrders = await _context.Orders.CountAsync(o => o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled);
             var totalRevenue = await _context.Orders.Where(o => o.PaymentStatus == PaymentStatus.Success).SumAsync(o => o.TotalAmount);
+            var totalDrivers = await _context.Users.CountAsync(u => u.Role == UserRole.Driver && u.ApprovalStatus == ApprovalStatus.Approved);
+            var pendingDrivers = await _context.Users.CountAsync(u => u.Role == UserRole.Driver && u.ApprovalStatus == ApprovalStatus.Pending);
 
             return new AdminStatsDto
             {
@@ -84,7 +86,9 @@ namespace DineDrop.Infrastructure.Services
                 PendingRequests = pendingRequests,
                 TotalUsers = totalUsers,
                 ActiveOrders = activeOrders,
-                TotalRevenue = totalRevenue
+                TotalRevenue = totalRevenue,
+                TotalDrivers = totalDrivers,
+                PendingDrivers = pendingDrivers
             };
         }
 
@@ -169,6 +173,59 @@ namespace DineDrop.Infrastructure.Services
                     CreatedAt = o.CreatedAt
                 })
                 .ToListAsync();
+        }
+
+        public async Task<IEnumerable<AdminDriverDto>> GetAllDriversAsync()
+        {
+            var driverUsers = await _context.Users
+                .Where(u => u.Role == UserRole.Driver)
+                .OrderByDescending(u => u.CreatedAt)
+                .ToListAsync();
+
+            var driverEntities = await _context.Drivers.ToListAsync();
+
+            var result = from u in driverUsers
+                         join d in driverEntities on u.Id equals d.UserId into dGroup
+                         from d in dGroup.DefaultIfEmpty()
+                         select new AdminDriverDto
+                         {
+                             UserId = u.Id,
+                             Name = u.Name,
+                             Email = u.Email,
+                             Phone = u.Phone ?? string.Empty,
+                             ApprovalStatus = u.ApprovalStatus.ToString(),
+                             IsBlocked = u.IsBlocked,
+                             IsAvailable = d?.IsAvailable ?? false,
+                             CreatedAt = u.CreatedAt
+                         };
+
+            return result;
+        }
+
+        public async Task ApproveDriverAsync(Guid userId, bool isApproved)
+        {
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == userId && u.Role == UserRole.Driver);
+
+            if (user == null)
+                throw new Exception("Driver not found.");
+
+            user.ApprovalStatus = isApproved ? ApprovalStatus.Approved : ApprovalStatus.Rejected;
+            user.IsActive = isApproved;
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task ToggleDriverBlockAsync(Guid userId)
+        {
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == userId && u.Role == UserRole.Driver);
+
+            if (user != null)
+            {
+                user.IsBlocked = !user.IsBlocked;
+                user.IsActive = !user.IsBlocked;
+                await _context.SaveChangesAsync();
+            }
         }
     }
 }

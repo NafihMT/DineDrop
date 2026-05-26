@@ -70,6 +70,58 @@ namespace DineDrop.API.Controllers
             }
         }
 
+        [HttpPost("{id}/rate")]
+        public async Task<IActionResult> RateOrder(Guid id, [FromBody] RateOrderDto dto)
+        {
+            try
+            {
+                var userId = GetUserId();
+                var result = await _orderService.RateOrderAsync(userId, id, dto);
+                if (result) return Ok(new { message = "Rating submitted successfully" });
+                return BadRequest(new { message = "Unable to submit rating for this order status." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("rescue-deals")]
+        public async Task<IActionResult> GetRescueDeals()
+        {
+            try
+            {
+                var userId = GetUserId();
+                var deals = await _orderService.GetActiveRescueDealsAsync(userId);
+                return Ok(deals);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("buy-rescue-deal")]
+        public async Task<IActionResult> BuyRescueDeal([FromBody] BuyRescueDealRequestDto dto)
+        {
+            try
+            {
+                var userId = GetUserId();
+                var orderId = await _orderService.BuyRescueDealAsync(userId, dto.OrderId, dto.AddressId);
+                return Ok(new { message = "Flash Rescue order placed successfully", orderId });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        public class BuyRescueDealRequestDto
+        {
+            public Guid OrderId { get; set; }
+            public Guid AddressId { get; set; }
+        }
+
         private Guid GetUserId()
         {
             var claim = User.FindFirst(ClaimTypes.NameIdentifier);

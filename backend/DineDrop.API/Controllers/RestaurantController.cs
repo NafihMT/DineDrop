@@ -45,6 +45,16 @@ namespace DineDrop.API.Controllers
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded.");
 
+            // Validate file content type and extension
+            var allowedContentTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml" };
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg" };
+            
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (string.IsNullOrEmpty(file.ContentType) || !allowedContentTypes.Contains(file.ContentType.ToLowerInvariant()) || !allowedExtensions.Contains(ext))
+            {
+                return BadRequest("Only image files (.jpg, .jpeg, .png, .gif, .webp, .svg) are allowed.");
+            }
+
             var userId = GetUserId();
             var items = await _menuService.GetMenuItemsAsync(userId);
             var item = items.FirstOrDefault(i => i.Id == id);

@@ -200,7 +200,24 @@ namespace DineDrop.Infrastructure.Services
 
             if (item == null) throw new Exception("Menu item not found.");
 
-            if (dto.CategoryId.HasValue && item.CategoryId != dto.CategoryId.Value)
+            if (!string.IsNullOrWhiteSpace(dto.CategoryName))
+            {
+                var category = await _context.MenuCategories
+                    .FirstOrDefaultAsync(c => c.Name.ToLower() == dto.CategoryName.ToLower() && c.RestaurantId == restaurantId);
+
+                if (category == null)
+                {
+                    category = new MenuCategory
+                    {
+                        RestaurantId = restaurantId,
+                        Name = dto.CategoryName
+                    };
+                    _context.MenuCategories.Add(category);
+                    await _context.SaveChangesAsync();
+                }
+                item.CategoryId = category.Id;
+            }
+            else if (dto.CategoryId.HasValue && item.CategoryId != dto.CategoryId.Value)
             {
                 var category = await _context.MenuCategories
                     .AnyAsync(c => c.Id == dto.CategoryId.Value && c.RestaurantId == restaurantId);
@@ -211,7 +228,10 @@ namespace DineDrop.Infrastructure.Services
             item.Name = dto.Name;
             item.Description = dto.Description;
             item.Price = dto.Price;
-            item.ImageUrl = dto.ImageUrl;
+            if (!string.IsNullOrEmpty(dto.ImageUrl))
+            {
+                item.ImageUrl = dto.ImageUrl;
+            }
             item.IsAvailable = dto.IsAvailable;
 
             await _context.SaveChangesAsync();

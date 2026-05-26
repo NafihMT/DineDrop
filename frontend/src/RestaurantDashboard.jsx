@@ -7,7 +7,13 @@ const RestaurantDashboard = ({ onLogout }) => {
   const [menuItems, setMenuItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('restaurant_active_tab') || 'overview';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('restaurant_active_tab', activeTab);
+  }, [activeTab]);
   
   // Profile state
   const [profile, setProfile] = useState({ name: '', description: '', address: '', businessType: '', businessHours: '', isOpen: true, latitude: '', longitude: '' });
@@ -34,6 +40,9 @@ const RestaurantDashboard = ({ onLogout }) => {
   // Edit/Delete states
   const [editingItem, setEditingItem] = useState(null);
   const [itemToDelete, setItemToDelete] = useState(null);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
 
   useEffect(() => {
     fetchActiveOrders();
@@ -64,6 +73,12 @@ const RestaurantDashboard = ({ onLogout }) => {
     });
 
     connection.on("OrderCancelledByCustomer", (data) => {
+      fetchActiveOrders();
+      fetchHistory();
+      fetchStats();
+    });
+
+    connection.on("OrderStatusUpdated", (data) => {
       fetchActiveOrders();
       fetchHistory();
       fetchStats();
@@ -275,6 +290,42 @@ const RestaurantDashboard = ({ onLogout }) => {
       console.error("Failed to save menu item:", err);
     }
   };
+  
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!customCategoryName.trim()) return;
+    setIsAddingCategory(true);
+    try {
+      const response = await fetch('http://localhost:5070/api/restaurant/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: customCategoryName.trim() }),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const created = await response.json();
+        alert(`Category "${created.name}" created successfully!`);
+        // Refresh categories list
+        const catRes = await fetch('http://localhost:5070/api/restaurant/categories', { credentials: 'include' });
+        if (catRes.ok) {
+          const updatedCats = await catRes.json();
+          setCategories(updatedCats);
+        }
+        // Select this category for the current dish
+        setNewItem(prev => ({ ...prev, categoryName: created.name }));
+        setCustomCategoryName('');
+        setShowNewCategoryInput(false);
+      } else {
+        const errText = await response.text();
+        alert(errText || "Failed to create category.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error creating category: " + err.message);
+    } finally {
+      setIsAddingCategory(false);
+    }
+  };
 
   const handleEditClick = (item) => {
     setEditingItem(item);
@@ -284,6 +335,8 @@ const RestaurantDashboard = ({ onLogout }) => {
       price: item.price,
       categoryName: item.categoryName
     });
+    setSelectedFile(null);
+    setPreviewUrl(null);
   };
 
   const handleDeleteItem = (id) => {
@@ -455,9 +508,17 @@ const RestaurantDashboard = ({ onLogout }) => {
                             <button onClick={() => handleUpdateOrderStatus(order.id, 'Accepted')} style={{ flex: 1, padding: '14px', borderRadius: '14px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>Accept</button>
                             <button onClick={() => handleUpdateOrderStatus(order.id, 'Cancelled')} style={{ padding: '14px', borderRadius: '14px', background: 'rgba(255,0,0,0.1)', border: 'none', color: '#ff4d4d', cursor: 'pointer' }}>×</button>
                           </>
+                        ) : order.status === 'Ready' ? (
+                           <button disabled style={{ flex: 1, padding: '14px', borderRadius: '14px', background: 'rgba(239, 159, 39, 0.05)', border: '1px dashed rgba(239, 159, 39, 0.3)', color: '#ef9f27', fontWeight: '800', cursor: 'not-allowed' }}>
+                             ⏳ Waiting for Driver Pickup
+                           </button>
+                        ) : order.status === 'Picked' ? (
+                           <button disabled style={{ flex: 1, padding: '14px', borderRadius: '14px', background: 'rgba(16, 185, 129, 0.05)', border: '1px dashed rgba(16, 185, 129, 0.3)', color: '#10b981', fontWeight: '800', cursor: 'not-allowed' }}>
+                             🛵 Out for Delivery
+                           </button>
                         ) : (
                           <button onClick={() => {
-                            const next = { 'Accepted': 'Preparing', 'Preparing': 'Ready', 'Ready': 'Picked', 'Picked': 'Delivered' };
+                            const next = { 'Accepted': 'Preparing', 'Preparing': 'Ready' };
                             handleUpdateOrderStatus(order.id, next[order.status]);
                           }} style={{ flex: 1, padding: '14px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontWeight: '800', cursor: 'pointer' }}>
                             Next Stage →
@@ -521,7 +582,7 @@ const RestaurantDashboard = ({ onLogout }) => {
           <div className="tab-content">
              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
                 <h2 style={{ fontSize: '2.5rem', fontWeight: '800' }}>Menu Editor</h2>
-                <button onClick={() => setEditingItem({})} style={{ padding: '16px 32px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>+ Add Item</button>
+                <button onClick={() => { setEditingItem({}); setNewItem({ name: '', description: '', price: '', categoryName: '' }); setSelectedFile(null); setPreviewUrl(null); }} style={{ padding: '16px 32px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>+ Add Item</button>
              </div>
              
              {loading ? <p>Loading menu...</p> : (
@@ -604,8 +665,70 @@ const RestaurantDashboard = ({ onLogout }) => {
                  <input placeholder="Item Name" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
                  <textarea placeholder="Description" value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
                  <input placeholder="Price ($)" type="number" step="0.01" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                 <input placeholder="Category" value={newItem.categoryName} onChange={e => setNewItem({...newItem, categoryName: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                 <input type="file" onChange={e => setSelectedFile(e.target.files[0])} style={{ color: '#666' }} />
+                 <div>
+                    <input placeholder="Category" value={newItem.categoryName} onChange={e => setNewItem({...newItem, categoryName: e.target.value})} list="existing-categories" style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
+                    <datalist id="existing-categories">
+                      {Array.from(new Set([
+                        ...categories.map(c => c.name),
+                        "Pizza", "Burger", "Sushi", "Healthy", "Dessert", "Coffee", "Salad", "Beverages", "Chicken", "Pasta"
+                      ])).map((catName, idx) => (
+                        <option key={idx} value={catName} />
+                      ))}
+                    </datalist>
+                    
+                    <div style={{ marginTop: '8px', textAlign: 'right' }}>
+                      <button type="button" onClick={() => { setShowNewCategoryInput(!showNewCategoryInput); setCustomCategoryName(''); }} style={{ background: 'none', border: 'none', color: '#ef9f27', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}>
+                        {showNewCategoryInput ? 'Cancel' : '+ Category not available? Add new'}
+                      </button>
+                    </div>
+
+                    {showNewCategoryInput && (
+                      <div className="glass" style={{ marginTop: '12px', padding: '16px', borderRadius: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <input 
+                          placeholder="New Category Name" 
+                          value={customCategoryName} 
+                          onChange={e => setCustomCategoryName(e.target.value)} 
+                          style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '0.9rem' }} 
+                        />
+                        <button type="button" onClick={handleAddCategory} disabled={isAddingCategory} style={{ padding: '10px 16px', borderRadius: '10px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          {isAddingCategory ? '...' : 'Add'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                 {(previewUrl || (editingItem && editingItem.imageUrl)) && (
+                   <div style={{ marginBottom: '15px' }}>
+                     <label style={{ display: 'block', color: '#666', fontSize: '0.85rem', marginBottom: '8px' }}>Current / Selected Image</label>
+                     <div style={{ width: '100%', height: '160px', borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', position: 'relative' }}>
+                       <img 
+                         src={previewUrl || `http://localhost:5070${editingItem.imageUrl}`} 
+                         style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                         alt="Dish Preview" 
+                       />
+                     </div>
+                   </div>
+                 )}
+                 <input 
+                   type="file" 
+                   accept="image/*"
+                   onChange={e => {
+                     const file = e.target.files[0];
+                     if (file && !file.type.startsWith('image/')) {
+                       alert("Please select a valid image file.");
+                       e.target.value = null;
+                       setSelectedFile(null);
+                       setPreviewUrl(null);
+                       return;
+                     }
+                     setSelectedFile(file);
+                     if (file) {
+                       setPreviewUrl(URL.createObjectURL(file));
+                     } else {
+                       setPreviewUrl(null);
+                     }
+                   }} 
+                   style={{ color: '#888', fontSize: '0.9rem' }} 
+                 />
                  <button type="submit" style={{ padding: '18px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>{editingItem.id ? 'Save Changes' : 'Create Item'}</button>
               </form>
            </div>

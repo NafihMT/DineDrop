@@ -4,6 +4,7 @@ using DineDrop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DineDrop.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260525133515_AddIsRatedToOrder")]
+    partial class AddIsRatedToOrder
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -92,9 +95,6 @@ namespace DineDrop.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
-
-                    b.Property<double>("Rating")
-                        .HasColumnType("float");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -758,13 +758,13 @@ namespace DineDrop.Infrastructure.Migrations
                         {
                             Id = new Guid("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b"),
                             ApprovalStatus = 1,
-                            CreatedAt = new DateTime(2026, 5, 25, 13, 42, 32, 196, DateTimeKind.Utc).AddTicks(3473),
+                            CreatedAt = new DateTime(2026, 5, 25, 13, 35, 12, 347, DateTimeKind.Utc).AddTicks(2819),
                             Email = "admin@dinedrop.com",
                             IsActive = true,
                             IsBlocked = false,
                             IsDeleted = false,
                             Name = "Admin",
-                            PasswordHash = "$2a$11$nW9Hbn5LmlX1k5gKThVCsuHPitrZfkGSUBHSHjG.vlC5.eX/YI/02",
+                            PasswordHash = "$2a$11$lC3Id15TaJyfzc6CtP7F8.ISrcN5c10hy1eMtBjPTrt9deBUHrZii",
                             Phone = "9999999999",
                             Role = 3
                         });

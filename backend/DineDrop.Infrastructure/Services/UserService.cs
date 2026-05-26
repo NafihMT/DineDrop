@@ -22,6 +22,7 @@ namespace DineDrop.Infrastructure.Services
         public async Task<IEnumerable<RestaurantProfileDto>> GetAllRestaurantAsync()
         {
             return await _context.Restaurants
+                    .OrderByDescending(r => r.Rating)
                     .Select(r => new RestaurantProfileDto
                     {
                         Id = r.Id,
@@ -94,6 +95,9 @@ namespace DineDrop.Infrastructure.Services
                 Name = user.Name,
                 Email = user.Email,
                 Phone = user.Phone ?? string.Empty,
+                ProfileImageUrl = user.ProfileImageUrl,
+                DateOfBirth = user.DateOfBirth,
+                Gender = user.Gender,
                 WalletBalance = wallet.Balance,
                 Addresses = user.Addresses.Select(a => new UserAddressDto
                 {
@@ -116,6 +120,9 @@ namespace DineDrop.Infrastructure.Services
 
             user.Name = dto.Name;
             user.Phone = dto.Phone;
+            user.ProfileImageUrl = dto.ProfileImageUrl;
+            user.DateOfBirth = dto.DateOfBirth;
+            user.Gender = dto.Gender;
             await _context.SaveChangesAsync();
             return true;
         }

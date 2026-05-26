@@ -25,6 +25,7 @@ namespace DineDrop.Domain.Entities
         public decimal DeliveryFee { get; set; }
         public decimal DiscountAmount { get; set; }
 
+        public bool IsRated { get; set; }
         //public ICollection<OrderItem> Items { get; set; }
         public ICollection<OrderItem> OrderItems { get; set; }
     }

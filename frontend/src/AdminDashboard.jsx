@@ -1,19 +1,28 @@
 import { useState, useEffect } from 'react';
 
 const AdminDashboard = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState('Dashboard'); // 'Dashboard', 'Restaurants', 'Users', 'Orders'
-  const [stats, setStats] = useState({ totalRestaurants: 0, pendingRequests: 0, totalUsers: 0, activeOrders: 0, totalRevenue: 0 });
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('admin_active_tab') || 'Dashboard';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('admin_active_tab', activeTab);
+  }, [activeTab]);
+  const [stats, setStats] = useState({ totalRestaurants: 0, pendingRequests: 0, totalUsers: 0, activeOrders: 0, totalRevenue: 0, totalDrivers: 0, pendingDrivers: 0 });
   const [pendingRequests, setPendingRequests] = useState([]);
   const [restaurants, setRestaurants] = useState([]);
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [driverStatusFilter, setDriverStatusFilter] = useState('All');
 
   // Pagination states
   const [restaurantPage, setRestaurantPage] = useState(1);
   const [userPage, setUserPage] = useState(1);
   const [orderPage, setOrderPage] = useState(1);
+  const [driverPage, setDriverPage] = useState(1);
   const itemsPerPage = 8;
 
   useEffect(() => {
@@ -21,6 +30,8 @@ const AdminDashboard = ({ onLogout }) => {
     setRestaurantPage(1);
     setUserPage(1);
     setOrderPage(1);
+    setDriverPage(1);
+    setDriverStatusFilter('All');
     if (activeTab === 'Dashboard') {
       fetchStats();
       fetchPendingRequests();
@@ -30,6 +41,8 @@ const AdminDashboard = ({ onLogout }) => {
       fetchUsers();
     } else if (activeTab === 'Orders') {
       fetchOrders();
+    } else if (activeTab === 'Drivers') {
+      fetchDrivers();
     }
   }, [activeTab]);
 
@@ -37,6 +50,7 @@ const AdminDashboard = ({ onLogout }) => {
     setRestaurantPage(1);
     setUserPage(1);
     setOrderPage(1);
+    setDriverPage(1);
   }, [searchQuery]);
 
   const fetchStats = async () => {
@@ -111,6 +125,21 @@ const AdminDashboard = ({ onLogout }) => {
     }
   };
 
+  const fetchDrivers = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('http://localhost:5070/api/admin/drivers', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setDrivers(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleApproval = async (userId, isApproved) => {
     try {
       const res = await fetch('http://localhost:5070/api/admin/approve-restaurant', {
@@ -120,16 +149,38 @@ const AdminDashboard = ({ onLogout }) => {
         credentials: 'include'
       });
       if (res.ok) {
-        if (activeTab === 'Dashboard') {
-          fetchPendingRequests();
-          fetchStats();
-        } else if (activeTab === 'Restaurants') {
-          fetchRestaurants();
-        }
+        if (activeTab === 'Dashboard') { fetchPendingRequests(); fetchStats(); }
+        else if (activeTab === 'Restaurants') fetchRestaurants();
       } else {
         const err = await res.text();
         alert("Action failed: " + err);
       }
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  };
+
+  const handleDriverApproval = async (userId, isApproved) => {
+    try {
+      const res = await fetch('http://localhost:5070/api/admin/approve-driver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, isApproved }),
+        credentials: 'include'
+      });
+      if (res.ok) { fetchDrivers(); fetchStats(); }
+      else alert("Action failed: " + await res.text());
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  };
+
+  const handleToggleDriverBlock = async (userId) => {
+    try {
+      const res = await fetch(`http://localhost:5070/api/admin/drivers/${userId}/toggle-block`, {
+        method: 'POST', credentials: 'include'
+      });
+      if (res.ok) fetchDrivers();
     } catch (err) {
       alert("Error: " + err.message);
     }
@@ -242,10 +293,11 @@ const AdminDashboard = ({ onLogout }) => {
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {[
-            { id: 'Dashboard', icon: '📊', label: 'Dashboard' },
+                    { id: 'Dashboard', icon: '📊', label: 'Dashboard' },
             { id: 'Restaurants', icon: '🍽️', label: 'Restaurants' },
             { id: 'Users', icon: '👥', label: 'Users' },
-            { id: 'Orders', icon: '📦', label: 'Orders' }
+            { id: 'Orders', icon: '📦', label: 'Orders' },
+            { id: 'Drivers', icon: '🛵', label: 'Drivers', badge: stats.pendingDrivers },
           ].map((item) => (
             <button
               key={item.id}
@@ -263,10 +315,16 @@ const AdminDashboard = ({ onLogout }) => {
                 fontWeight: '700',
                 fontSize: '1.05rem',
                 transition: 'all 0.2s',
-                textAlign: 'left'
+                textAlign: 'left',
+                justifyContent: 'space-between'
               }}
             >
-              <span style={{ fontSize: '1.3rem' }}>{item.icon}</span> {item.label}
+              <span style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <span style={{ fontSize: '1.3rem' }}>{item.icon}</span> {item.label}
+              </span>
+              {item.badge > 0 && (
+                <span style={{ background: '#f39c12', color: '#000', borderRadius: '20px', padding: '2px 8px', fontSize: '0.72rem', fontWeight: '900' }}>{item.badge}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -301,10 +359,12 @@ const AdminDashboard = ({ onLogout }) => {
             {/* Stats Grid */}
             <div style={{ display: 'flex', gap: '24px', marginBottom: '48px', flexWrap: 'wrap' }}>
               <StatCard title="Total Restaurants" value={stats.totalRestaurants} color="#00f3ff" icon="🏪" />
-              <StatCard title="Pending Requests" value={stats.pendingRequests} color="#EF9F27" icon="⏳" />
+              <StatCard title="Pending Restaurants" value={stats.pendingRequests} color="#EF9F27" icon="⏳" />
               <StatCard title="Total Users" value={stats.totalUsers} color="#9b59b6" icon="👤" />
               <StatCard title="Active Orders" value={stats.activeOrders} color="#3B82F6" icon="🚚" />
               <StatCard title="Total Revenue" value={`$${stats.totalRevenue.toFixed(2)}`} color="#2ecc71" icon="💵" />
+              <StatCard title="Active Drivers" value={stats.totalDrivers} color="#f39c12" icon="🛵" />
+              <StatCard title="Pending Drivers" value={stats.pendingDrivers} color="#e17055" icon="🔔" />
             </div>
 
             {/* Pending Requests Table */}
@@ -552,6 +612,137 @@ const AdminDashboard = ({ onLogout }) => {
             )}
           </div>
         )}
+
+        {activeTab === 'Drivers' && (() => {
+          const filteredDrivers = drivers.filter(d =>
+            (d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+             d.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+             d.phone.includes(searchQuery)) &&
+            (driverStatusFilter === 'All' || d.approvalStatus === driverStatusFilter)
+          );
+          const totalDriverPages = Math.ceil(filteredDrivers.length / itemsPerPage);
+          const paginatedDrivers = filteredDrivers.slice((driverPage - 1) * itemsPerPage, driverPage * itemsPerPage);
+          const pending = drivers.filter(d => d.approvalStatus === 'Pending').length;
+          const approved = drivers.filter(d => d.approvalStatus === 'Approved').length;
+          const rejected = drivers.filter(d => d.approvalStatus === 'Rejected').length;
+
+          return (
+            <div style={{ animation: 'fadeIn 0.4s ease-out' }}>
+              {/* Summary Chips */}
+              <div style={{ display: 'flex', gap: '14px', marginBottom: '28px' }}>
+                {[
+                  { label: 'All', count: drivers.length, color: '#00f3ff' },
+                  { label: 'Pending', count: pending, color: '#f39c12' },
+                  { label: 'Approved', count: approved, color: '#2ecc71' },
+                  { label: 'Rejected', count: rejected, color: '#ff4d4d' },
+                ].map(chip => (
+                  <button key={chip.label} onClick={() => { setDriverStatusFilter(chip.label); setDriverPage(1); }}
+                    style={{ padding: '8px 18px', borderRadius: '20px', border: `1px solid ${driverStatusFilter === chip.label ? chip.color : 'rgba(255,255,255,0.08)'}`, background: driverStatusFilter === chip.label ? `${chip.color}18` : 'transparent', color: driverStatusFilter === chip.label ? chip.color : '#666', fontWeight: '800', fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Outfit, sans-serif' }}>
+                    {chip.label}
+                    <span style={{ background: driverStatusFilter === chip.label ? chip.color : 'rgba(255,255,255,0.06)', color: driverStatusFilter === chip.label ? '#000' : '#555', borderRadius: '10px', padding: '1px 7px', fontSize: '0.75rem', fontWeight: '900' }}>{chip.count}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="glass" style={{ padding: '36px', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: '800', marginBottom: '28px' }}>Driver Management ({filteredDrivers.length})</h2>
+
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '60px', color: '#888', fontWeight: '600' }}>Loading drivers...</div>
+                ) : filteredDrivers.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '80px 40px', color: '#666' }}>
+                    <span style={{ fontSize: '3rem' }}>🛵</span>
+                    <h3 style={{ marginTop: '16px', color: '#aaa', fontWeight: '700' }}>No Drivers Found</h3>
+                    <p style={{ marginTop: '4px' }}>No drivers match the current filter.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', textAlign: 'left' }}>
+                            <th style={{ padding: '16px 20px', color: '#888', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase' }}>Driver</th>
+                            <th style={{ padding: '16px 20px', color: '#888', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase' }}>Contact</th>
+                            <th style={{ padding: '16px 20px', color: '#888', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase' }}>Applied</th>
+                            <th style={{ padding: '16px 20px', color: '#888', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase' }}>Status</th>
+                            <th style={{ padding: '16px 20px', color: '#888', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase' }}>Availability</th>
+                            <th style={{ padding: '16px 20px', color: '#888', fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedDrivers.map(d => (
+                            <tr key={d.userId} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                              <td style={{ padding: '20px 20px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                  <div style={{ width: '42px', height: '42px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(243,156,18,0.2), rgba(243,156,18,0.05))', border: '1px solid rgba(243,156,18,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.1rem', color: '#f39c12', flexShrink: 0 }}>
+                                    {d.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: '800', fontSize: '1rem', color: '#fff' }}>{d.name}</div>
+                                    <div style={{ fontSize: '0.78rem', color: '#555', marginTop: '2px', fontFamily: 'monospace' }}>#{d.userId.substring(0, 8)}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ padding: '20px 20px' }}>
+                                <div style={{ fontWeight: '600', color: '#ddd', fontSize: '0.9rem' }}>{d.email}</div>
+                                <div style={{ fontSize: '0.82rem', color: '#666', marginTop: '2px' }}>{d.phone || '—'}</div>
+                              </td>
+                              <td style={{ padding: '20px 20px', color: '#aaa', fontSize: '0.9rem' }}>{new Date(d.createdAt).toLocaleDateString()}</td>
+                              <td style={{ padding: '20px 20px' }}>
+                                {d.isBlocked ? (
+                                  <span style={{ padding: '5px 12px', borderRadius: '20px', background: 'rgba(255,77,77,0.12)', color: '#ff4d4d', fontSize: '0.8rem', fontWeight: '700' }}>Blocked</span>
+                                ) : d.approvalStatus === 'Approved' ? (
+                                  <span style={{ padding: '5px 12px', borderRadius: '20px', background: 'rgba(46,204,113,0.12)', color: '#2ecc71', fontSize: '0.8rem', fontWeight: '700' }}>Approved</span>
+                                ) : d.approvalStatus === 'Pending' ? (
+                                  <span style={{ padding: '5px 12px', borderRadius: '20px', background: 'rgba(243,156,18,0.12)', color: '#f39c12', fontSize: '0.8rem', fontWeight: '700' }}>⏳ Pending</span>
+                                ) : (
+                                  <span style={{ padding: '5px 12px', borderRadius: '20px', background: 'rgba(255,77,77,0.08)', color: '#ff4d4d', fontSize: '0.8rem', fontWeight: '700' }}>Rejected</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '20px 20px' }}>
+                                {d.approvalStatus === 'Approved' && !d.isBlocked ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: d.isAvailable ? '#2ecc71' : '#888', fontWeight: '700', fontSize: '0.85rem' }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: d.isAvailable ? '#2ecc71' : '#555', display: 'inline-block' }} />
+                                    {d.isAvailable ? 'Online' : 'Offline'}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#444', fontSize: '0.85rem' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '20px 20px' }}>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  {d.approvalStatus === 'Pending' && (
+                                    <>
+                                      <button onClick={() => handleDriverApproval(d.userId, true)}
+                                        style={{ padding: '7px 14px', borderRadius: '10px', background: '#2ecc71', color: '#000', border: 'none', cursor: 'pointer', fontWeight: '800', fontSize: '0.82rem' }}>✓ Approve</button>
+                                      <button onClick={() => handleDriverApproval(d.userId, false)}
+                                        style={{ padding: '7px 14px', borderRadius: '10px', background: 'rgba(255,77,77,0.1)', color: '#ff4d4d', border: '1px solid rgba(255,77,77,0.25)', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>✗ Reject</button>
+                                    </>
+                                  )}
+                                  {d.approvalStatus === 'Approved' && (
+                                    <button onClick={() => handleToggleDriverBlock(d.userId)}
+                                      style={{ padding: '7px 14px', borderRadius: '10px', background: d.isBlocked ? 'rgba(46,204,113,0.1)' : 'rgba(255,77,77,0.1)', color: d.isBlocked ? '#2ecc71' : '#ff4d4d', border: `1px solid ${d.isBlocked ? 'rgba(46,204,113,0.25)' : 'rgba(255,77,77,0.25)'}`, cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>
+                                      {d.isBlocked ? 'Unblock' : 'Block'}
+                                    </button>
+                                  )}
+                                  {d.approvalStatus === 'Rejected' && (
+                                    <button onClick={() => handleDriverApproval(d.userId, true)}
+                                      style={{ padding: '7px 14px', borderRadius: '10px', background: 'rgba(0,243,255,0.08)', color: '#00f3ff', border: '1px solid rgba(0,243,255,0.2)', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Re-approve</button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination currentPage={driverPage} totalPages={totalDriverPages} onPageChange={setDriverPage} />
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </main>
     </div>
   );

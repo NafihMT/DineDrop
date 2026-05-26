@@ -11,6 +11,7 @@ namespace DineDrop.Application.Modules.Auth.Interfaces
     {
         Task<AuthResponseDto> RegisterAsync(RegisterDto dto);
         Task<AuthResponseDto> RegisterRestaurantAsync(RestaurantRegisterDto dto);
+        Task<AuthResponseDto> RegisterDriverAsync(DriverRegisterDto dto);
         Task<AuthResponseDto> LoginAsync(LoginDto dto);
         Task<AuthResponseDto> GoogleLoginAsync(string token);
         Task<AuthResponseDto> RefreshAsync(string refreshToken);

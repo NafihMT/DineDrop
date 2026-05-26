@@ -26,6 +26,20 @@ namespace DineDrop.Application.Modules.Admin.DTOs
         public int TotalUsers { get; set; }
         public int ActiveOrders { get; set; }
         public decimal TotalRevenue { get; set; }
+        public int TotalDrivers { get; set; }
+        public int PendingDrivers { get; set; }
+    }
+
+    public class AdminDriverDto
+    {
+        public Guid UserId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string ApprovalStatus { get; set; } = string.Empty;
+        public bool IsBlocked { get; set; }
+        public bool IsAvailable { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
     public class AdminRestaurantDto

@@ -1,0 +1,26 @@
+services:
+  redis:
+    # uses official redis image from docker hub
+    image: redis:latest
+    # Container      
+    container_name: dinedrop-redis
+
+    # host:container port mapping
+    ports:
+      - "6379:6379"
+
+    #persist the data even after the container restart
+    volumes:
+      - redis-data:/data
+
+    #auto start with docker desktop
+    restart: unless-stopped
+
+    # enable data persistence
+    command: redis-server --appendonly yes
+
+volumes:
+
+  #named Volume definition
+  redis-data:
+

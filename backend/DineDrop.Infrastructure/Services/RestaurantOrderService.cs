@@ -10,6 +10,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using DineDrop.Infrastructure.Hubs;
+using DineDrop.Application.Modules.Drivers.Interfaces;
 
 namespace DineDrop.Infrastructure.Services
 {
@@ -17,11 +18,13 @@ namespace DineDrop.Infrastructure.Services
     {
         private readonly AppDbContext _context;
         private readonly IHubContext<OrderHub> _hubContext;
+        private readonly IRedisService _redisService;
 
-        public RestaurantOrderService(AppDbContext context, IHubContext<OrderHub> hubContext)
+        public RestaurantOrderService(AppDbContext context, IHubContext<OrderHub> hubContext, IRedisService redisService)
         {
             _context = context;
             _hubContext = hubContext;
+            _redisService = redisService;
         }
 
         public async Task<List<RestaurantOrderDto>> GetActiveOrdersAsync(Guid userId)
@@ -74,6 +77,7 @@ namespace DineDrop.Infrastructure.Services
         public async Task<bool> UpdateOrderStatusAsync(Guid userId, UpdateOrderStatusDto dto)
         {
             var order = await _context.Orders
+                .Include(o => o.Restaurant)
                 .FirstOrDefaultAsync(o => o.Id == dto.OrderId && o.Restaurant.OwnerId == userId);
 
             if (order == null)
@@ -84,6 +88,7 @@ namespace DineDrop.Infrastructure.Services
                 throw new Exception("Cannot change the status of a completed or cancelled order.");
 
             order.Status = dto.NewStatus;
+            order.UpdatedAt = DateTime.UtcNow;
 
             if (dto.NewStatus == OrderStatus.Cancelled)
             {
@@ -117,6 +122,83 @@ namespace DineDrop.Infrastructure.Services
                     newStatus = order.Status.ToString() 
                 });
 
+            // Notify Restaurant Group
+            await _hubContext.Clients.Group(order.RestaurantId.ToString())
+                .SendAsync("OrderStatusUpdated", new
+                {
+                    orderId = order.Id,
+                    newStatus = order.Status.ToString()
+                });
+
+            // If the order is Accepted, send a real-time notification only to drivers within 20km radius
+            if (order.Status == OrderStatus.Accepted)
+            {
+                if (order.Restaurant != null)
+                {
+                    var restaurantLat = order.Restaurant.Latitude;
+                    var restaurantLng = order.Restaurant.Longitude;
+
+                    // Get nearby drivers (within 20 km) from Redis Geo
+                    var nearbyDriverIds = await _redisService.GetNearbyDriversAsync(restaurantLat, restaurantLng, 20.0);
+
+                    if (nearbyDriverIds != null && nearbyDriverIds.Count > 0)
+                    {
+                        // Get the corresponding approved, online (isAvailable == true) drivers from DB
+                        var nearbyDrivers = await _context.Drivers
+                            .Include(d => d.User)
+                            .Where(d => nearbyDriverIds.Contains(d.Id) && 
+                                        d.User.ApprovalStatus == ApprovalStatus.Approved && 
+                                        !d.User.IsBlocked && 
+                                        d.IsAvailable)
+                            .ToListAsync();
+
+                        foreach (var driver in nearbyDrivers)
+                        {
+                            await _hubContext.Clients.User(driver.UserId.ToString()).SendAsync("OrderAcceptedByRestaurant", new
+                            {
+                                orderId = order.Id,
+                                restaurantName = order.Restaurant.Name,
+                                totalAmount = order.TotalAmount,
+                                deliveryFee = order.DeliveryFee
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback to broadcasting if restaurant is not set
+                    await _hubContext.Clients.All.SendAsync("OrderAcceptedByRestaurant", new
+                    {
+                        orderId = order.Id,
+                        restaurantName = "A Restaurant",
+                        totalAmount = order.TotalAmount,
+                        deliveryFee = order.DeliveryFee
+                    });
+                }
+            }
+
+            // If the order is Ready, send a real-time notification to the accepted driver only
+            if (order.Status == OrderStatus.Ready)
+            {
+                if (order.DriverId.HasValue)
+                {
+                    var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.Id == order.DriverId.Value);
+                    if (driver != null)
+                    {
+                        await _hubContext.Clients.User(driver.UserId.ToString()).SendAsync("OrderReady", new
+                        {
+                            orderId = order.Id,
+                            restaurantName = order.Restaurant?.Name ?? "A Restaurant",
+                            totalAmount = order.TotalAmount,
+                            deliveryFee = order.DeliveryFee
+                        });
+                    }
+                }
+            }
+
+            // Notify all drivers to update available list
+            await _hubContext.Clients.All.SendAsync("OrderStatusUpdated");
+
             return true;
         }
 
@@ -149,6 +231,20 @@ namespace DineDrop.Infrastructure.Services
                         Amount = g.Sum(o => o.TotalAmount)
                     }).ToList()
             };
+        }
+
+        private double CalculateDistance(double lat1, double lon1, double lat2, double lon2)
+        {
+            var r = 6371.0;
+            var dLat = (lat2 - lat1) * (Math.PI / 180.0);
+            var dLon = (lon2 - lon1) * (Math.PI / 180.0);
+
+            var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                    Math.Cos(lat1 * (Math.PI / 180.0)) * Math.Cos(lat2 * (Math.PI / 180.0)) *
+                    Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+            var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+            return r * c;
         }
     }
 }

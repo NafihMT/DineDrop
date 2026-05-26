@@ -11,7 +11,9 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using System.Text;
 using DineDrop.Application.Modules.Users.Interfaces;
+using DineDrop.Application.Modules.Drivers.Interfaces;
 using DineDrop.Infrastructure.Hubs;
+using StackExchange.Redis;
 
 namespace DineDrop.API
 {
@@ -42,6 +44,15 @@ namespace DineDrop.API
             builder.Services.AddScoped<IRestaurantOrderService, RestaurantOrderService>();
             builder.Services.AddScoped<IRestaurantAnalyticsService, RestaurantAnalyticsService>();
             builder.Services.AddScoped<ICustomerOrderService, CustomerOrderService>();
+            builder.Services.AddScoped<IDriverService, DriverService>();
+
+            // Register Redis Services
+            var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
+            builder.Services.AddSingleton<IConnectionMultiplexer>(sp => ConnectionMultiplexer.Connect(redisConnectionString));
+            builder.Services.AddScoped<IRedisService, RedisService>();
+
+            // Register Background Services
+            builder.Services.AddHostedService<OrderDispatchBackgroundService>();
 
             // Jwt Config
             var jwtKey = builder.Configuration["Jwt:Key"];

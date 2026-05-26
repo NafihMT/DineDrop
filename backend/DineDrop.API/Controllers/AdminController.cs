@@ -69,5 +69,27 @@ namespace DineDrop.API.Controllers
             var orders = await _adminService.GetAllOrdersAsync();
             return Ok(orders);
         }
+
+        [HttpGet("drivers")]
+        public async Task<IActionResult> GetAllDrivers()
+        {
+            var drivers = await _adminService.GetAllDriversAsync();
+            return Ok(drivers);
+        }
+
+        [HttpPost("approve-driver")]
+        public async Task<IActionResult> ApproveDriver(ApprovalDto dto)
+        {
+            await _adminService.ApproveDriverAsync(dto.UserId, dto.IsApproved);
+            var message = dto.IsApproved ? "Driver approved successfully." : "Driver application rejected.";
+            return Ok(new { message });
+        }
+
+        [HttpPost("drivers/{userId}/toggle-block")]
+        public async Task<IActionResult> ToggleDriverBlock(Guid userId)
+        {
+            await _adminService.ToggleDriverBlockAsync(userId);
+            return Ok(new { message = "Driver status updated." });
+        }
     }
 }

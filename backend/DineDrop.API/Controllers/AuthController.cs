@@ -34,6 +34,14 @@ namespace DineDrop.API.Controllers
             return Ok(result);
         }
 
+        [HttpPost("register-driver")]
+        public async Task<IActionResult> RegisterDriver(DriverRegisterDto dto)
+        {
+            var result = await _authService.RegisterDriverAsync(dto);
+            SetTokenCookies(result.Token, result.RefreshToken);
+            return Ok(result);
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto dto)
         {

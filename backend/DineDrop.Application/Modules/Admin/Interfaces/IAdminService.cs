@@ -14,5 +14,8 @@ namespace DineDrop.Application.Modules.Admin.Interfaces
         Task<IEnumerable<AdminUserDto>> GetAllUsersAsync();
         Task ToggleUserBlockStatusAsync(Guid userId);
         Task<IEnumerable<AdminOrderDto>> GetAllOrdersAsync();
+        Task<IEnumerable<AdminDriverDto>> GetAllDriversAsync();
+        Task ApproveDriverAsync(Guid userId, bool isApproved);
+        Task ToggleDriverBlockAsync(Guid userId);
     }
 }

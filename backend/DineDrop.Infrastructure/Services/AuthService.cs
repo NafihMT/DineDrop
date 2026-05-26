@@ -136,6 +136,52 @@ namespace DineDrop.Infrastructure.Services
             }
         }
 
+        public async Task<AuthResponseDto> RegisterDriverAsync(DriverRegisterDto dto)
+        {
+            if (await _context.Users.AnyAsync(x => x.Email == dto.Email))
+                throw new Exception("Email already exists");
+
+            var user = new User
+            {
+                Name = dto.Name,
+                Email = dto.Email,
+                Phone = dto.Phone,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+                Role = UserRole.Driver,
+                ApprovalStatus = ApprovalStatus.Pending
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            // Store driver-specific info
+            var driver = new Driver
+            {
+                UserId = user.Id,
+                IsAvailable = false
+            };
+            _context.Drivers.Add(driver);
+            await _context.SaveChangesAsync();
+
+            var refreshToken = new RefreshToken
+            {
+                UserId = user.Id,
+                Token = GenerateRefreshToken(),
+                ExpiryDate = DateTime.UtcNow.AddDays(7)
+            };
+
+            _context.RefreshTokens.Add(refreshToken);
+            await _context.SaveChangesAsync();
+
+            return new AuthResponseDto
+            {
+                Token = _jwtService.GenerateToken(user),
+                RefreshToken = refreshToken.Token,
+                Role = user.Role.ToString()
+            };
+        }
+
+
 
         public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
         {

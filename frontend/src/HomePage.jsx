@@ -2,6 +2,70 @@ import React, { useEffect, useState, useRef } from 'react';
 import Cookies from 'js-cookie';
 import * as signalR from "@microsoft/signalr";
 import LocationPicker from './LocationPicker';
+import OrderTrackingMap from './OrderTrackingMap';
+
+const RescueDealCard = ({ deal, onBuy }) => {
+  const [timeLeft, setTimeLeft] = useState({ minutes: 0, seconds: 0, expired: false });
+
+  useEffect(() => {
+    const updateTime = () => {
+      const expiresDate = new Date(deal.expiresAt);
+      const now = new Date();
+      const diffMs = expiresDate - now;
+      if (diffMs <= 0) {
+        setTimeLeft({ minutes: 0, seconds: 0, expired: true });
+      } else {
+        const minutes = Math.floor(diffMs / 1000 / 60);
+        const seconds = Math.floor((diffMs / 1000) % 60);
+        setTimeLeft({ minutes, seconds, expired: false });
+      }
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [deal.expiresAt]);
+
+  if (timeLeft.expired) return null;
+
+  const isCritical = timeLeft.minutes < 5;
+
+  return (
+    <div className="rescue-ticket" style={{ border: `1px solid ${isCritical ? 'rgba(255, 0, 85, 0.35)' : 'rgba(0, 243, 255, 0.2)'}`, background: isCritical ? 'linear-gradient(135deg, rgba(255,0,85,0.06), rgba(0,0,0,0))' : 'linear-gradient(135deg, rgba(0,243,255,0.03), rgba(0,0,0,0))' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: isCritical ? 'linear-gradient(90deg, #ff0055, #f39c12)' : 'linear-gradient(90deg, #00f3ff, #0070ff)' }}></div>
+      
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+          <h4 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#fff' }}>{deal.restaurantName}</h4>
+          <span className="pulse" style={{ fontSize: '0.78rem', fontWeight: '800', color: isCritical ? '#ff0055' : '#00f3ff', background: isCritical ? 'rgba(255,0,85,0.1)' : 'rgba(0,243,255,0.1)', padding: '4px 10px', borderRadius: '10px', border: `1px solid ${isCritical ? 'rgba(255,0,85,0.15)' : 'rgba(0,243,255,0.15)'}` }}>
+            ⏳ {timeLeft.minutes}:{timeLeft.seconds.toString().padStart(2, '0')} min
+          </span>
+        </div>
+        
+        <div style={{ marginBottom: '20px' }}>
+          <p style={{ fontSize: '0.68rem', color: '#666', fontWeight: '800', letterSpacing: '0.8px', marginBottom: '8px', textTransform: 'uppercase' }}>Prepared Dish Tray</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {deal.items.map((item, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', color: '#ccc' }}>
+                <span style={{ fontWeight: '500' }}>{item.quantity}x {item.dishName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '16px', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <span style={{ fontSize: '0.8rem', color: '#666', textDecoration: 'line-through', marginRight: '8px' }}>${(deal.originalSubtotal || 0).toFixed(2)}</span>
+          <span style={{ fontSize: '1.4rem', fontWeight: '950', color: isCritical ? '#ff0055' : '#00f3ff' }}>${(deal.rescuedPrice || 0).toFixed(2)}</span>
+        </div>
+        <button onClick={() => onBuy(deal.orderId)} className="neon-btn" style={{ background: isCritical ? 'linear-gradient(135deg, #ff0055, #ff4d4d)' : 'linear-gradient(135deg, #00f3ff, #0070ff)', boxShadow: isCritical ? '0 0 15px rgba(255, 0, 85, 0.3)' : '0 0 15px rgba(0, 243, 255, 0.2)', color: '#000', padding: '10px 18px', borderRadius: '12px', fontWeight: '800', fontSize: '0.82rem' }}>
+          RESCUE NOW
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const HomePage = ({ onLogout }) => {
   const [restaurants, setRestaurants] = useState([]);
@@ -9,7 +73,13 @@ const HomePage = ({ onLogout }) => {
   const [menu, setMenu] = useState([]);
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('browse'); // browse, history, tracking
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('customer_active_tab') || 'browse';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('customer_active_tab', activeTab);
+  }, [activeTab]); // browse, history, tracking
   const [myOrders, setMyOrders] = useState([]);
   const [trackingOrder, setTrackingOrder] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -19,6 +89,7 @@ const HomePage = ({ onLogout }) => {
   const [userLocation, setUserLocation] = useState(null);
   const [nearbyOnly, setNearbyOnly] = useState(false);
   const [visibleCount, setVisibleCount] = useState(6);
+  const [rescueDeals, setRescueDeals] = useState([]);
   const signalrConnection = useRef(null);
 
   useEffect(() => {
@@ -29,6 +100,9 @@ const HomePage = ({ onLogout }) => {
     name: 'Customer',
     email: 'customer@gmail.com',
     phone: '',
+    profileImageUrl: null,
+    dateOfBirth: '',
+    gender: '',
     walletBalance: 0.00,
     addresses: []
   });
@@ -45,6 +119,13 @@ const HomePage = ({ onLogout }) => {
     isDefault: false
   });
   const [editingAddressId, setEditingAddressId] = useState(null);
+
+  const [restRating, setRestRating] = useState(5);
+  const [restFeedback, setRestFeedback] = useState('');
+  const [driverRating, setDriverRating] = useState(5);
+  const [driverFeedback, setDriverFeedback] = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
   const [showMap, setShowMap] = useState(false);
   const [searchLocationText, setSearchLocationText] = useState('');
@@ -109,9 +190,14 @@ const HomePage = ({ onLogout }) => {
     fetchRestaurants();
     fetchMyOrders();
     fetchProfile();
+    fetchRescueDeals();
     setupSignalR();
+
+    const interval = setInterval(fetchRescueDeals, 30000);
+
     return () => {
       if (signalrConnection.current) signalrConnection.current.stop();
+      clearInterval(interval);
     };
   }, []);
 
@@ -121,44 +207,86 @@ const HomePage = ({ onLogout }) => {
       .withAutomaticReconnect()
       .build();
 
-    connection.on("OrderStatusUpdated", (data) => {
-      // Update tracking state if this is the order we are watching
-      setTrackingOrder(prev => {
-        if (prev && prev.id === data.orderId) {
-          return { ...prev, status: data.newStatus };
-        }
-        return prev;
-      });
+    connection.on("OrderStatusUpdated", async (data) => {
+      // If we are currently tracking this order, fetch full updated details to sync all fields (like deliveryOtp)
+      if (trackingOrderRef.current && trackingOrderRef.current.id === data.orderId) {
+        fetchOrderDetails(data.orderId, false);
+      } else {
+        setTrackingOrder(prev => {
+          if (prev && prev.id === data.orderId) {
+            return { ...prev, status: data.newStatus };
+          }
+          return prev;
+        });
+      }
       // Refresh history list and profile (wallet balance)
       fetchMyOrders(false);
       fetchProfile();
-      
+
+      // If driver just picked up the order, fetch the OTP to show in notification
+      let otpCode = null;
+      if (data.newStatus === 'Picked') {
+        try {
+          const res = await fetch(`http://localhost:5070/api/customer/orders/${data.orderId}`, { credentials: 'include' });
+          if (res.ok) {
+            const orderData = await res.json();
+            otpCode = orderData.deliveryOtp || null;
+          }
+        } catch (e) {
+          console.error('Failed to fetch OTP for notification:', e);
+        }
+      }
+
       // Show notification
       setOrderNotification({
         orderId: data.orderId,
         restaurantName: data.restaurantName || "Restaurant",
-        status: data.newStatus
+        status: data.newStatus,
+        message: data.message || null,
+        otpCode
       });
 
-      // Auto-hide after 10 seconds
-      setTimeout(() => setOrderNotification(null), 10000);
+      // Auto-hide after 15 seconds (longer if OTP or message is shown)
+      setTimeout(() => setOrderNotification(null), (otpCode || data.message) ? 20000 : 10000);
     });
 
     connection.on("RestaurantProfileUpdated", () => {
       fetchRestaurants();
     });
 
+    connection.on("DriverLocationUpdated", (data) => {
+      console.log("Live Driver Location Stream Received:", data);
+      setTrackingOrder(prev => {
+        if (prev && prev.id === data.orderId) {
+          return {
+            ...prev,
+            driverLatitude: data.latitude,
+            driverLongitude: data.longitude
+          };
+        }
+        return prev;
+      });
+    });
+
     try {
       await connection.start();
       console.log("SignalR Connected (User)");
       signalrConnection.current = connection;
+      if (trackingOrderRef.current && trackingOrderRef.current.id) {
+        try {
+          await connection.invoke("JoinOrderGroup", trackingOrderRef.current.id);
+          console.log("Joined order group on connection start:", trackingOrderRef.current.id);
+        } catch (joinErr) {
+          console.error("Failed to join order group on connection start:", joinErr);
+        }
+      }
     } catch (err) {
       console.error("SignalR Connection Error:", err);
     }
   };
 
-  const fetchRestaurants = async () => {
-    setLoading(true);
+  const fetchRestaurants = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const response = await fetch(`http://localhost:5070/api/user/restaurants?t=${new Date().getTime()}`, { credentials: 'include' });
       if (response.ok) {
@@ -168,7 +296,7 @@ const HomePage = ({ onLogout }) => {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -225,12 +353,67 @@ const HomePage = ({ onLogout }) => {
     }
   };
 
+  const fetchRescueDeals = async () => {
+    try {
+      const response = await fetch('http://localhost:5070/api/customer/orders/rescue-deals', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setRescueDeals(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch rescue deals:", err);
+    }
+  };
+
+  const buyRescueDeal = async (orderId) => {
+    if (!selectedDeliveryAddress) {
+      alert("Please select or add a delivery address in your Profile tab first.");
+      setActiveTab('profile');
+      return;
+    }
+
+    if (!window.confirm("🔥 Confirm Flash Food Rescue Claim? The deal subtotal will be deducted from your DineDrop Wallet.")) return;
+
+    setIsPlacingOrder(true);
+    try {
+      const response = await fetch('http://localhost:5070/api/customer/orders/buy-rescue-deal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, addressId: selectedDeliveryAddress }),
+        credentials: 'include'
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        alert("⚡ Flash Rescue Claimed! Order is pre-prepared and ready for driver pickup.");
+        setCart([]);
+        fetchProfile();
+        fetchRescueDeals();
+        fetchMyOrders(true);
+        fetchOrderDetails(result.orderId, true);
+      } else {
+        alert(result.message || "Failed to claim Flash Rescue deal.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error claiming Flash Rescue deal: " + err.message);
+    } finally {
+      setIsPlacingOrder(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     try {
       const response = await fetch('http://localhost:5070/api/user/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: profileData.name, phone: profileData.phone }),
+        body: JSON.stringify({
+          name: profileData.name,
+          phone: profileData.phone,
+          profileImageUrl: profileData.profileImageUrl || null,
+          dateOfBirth: profileData.dateOfBirth ? profileData.dateOfBirth : null,
+          gender: profileData.gender || null
+        }),
         credentials: 'include'
       });
       if (response.ok) {
@@ -331,18 +514,23 @@ const HomePage = ({ onLogout }) => {
     }
   };
 
-  const cancelOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to cancel this order? Your refund will be credited to your DineDrop wallet.")) return;
+  const cancelOrder = async (orderId, status) => {
+    let msg = "Are you sure you want to cancel this order? Your refund will be credited to your DineDrop wallet.";
+    if (status === 'Preparing' || status === 'Ready') {
+      msg = "⚠️ This order is already prepared/preparing! Cancelling now will charge a 50% cancellation fee. You will receive a partial refund (50% subtotal + 100% delivery fee) to your wallet. Proceed?";
+    }
+    if (!window.confirm(msg)) return;
     try {
       const response = await fetch(`http://localhost:5070/api/customer/orders/${orderId}/cancel`, {
         method: 'POST',
         credentials: 'include'
       });
       if (response.ok) {
-        alert("Order cancelled successfully. Refund has been added to your wallet.");
+        alert("Order cancelled successfully. Refund credited to DineDrop Wallet.");
         fetchMyOrders();
         fetchOrderDetails(orderId, false);
         fetchProfile();
+        fetchRescueDeals(); // refresh list
       } else {
         const error = await response.json();
         alert(error.message || "Failed to cancel order");
@@ -380,17 +568,58 @@ const HomePage = ({ onLogout }) => {
         let data = await response.json();
         data.status = typeof data.status === 'number' ? statusReverseMap[data.status] : data.status;
         setTrackingOrder(data);
+
+        // Reset rating feedback states
+        setRestRating(5);
+        setRestFeedback('');
+        setDriverRating(5);
+        setDriverFeedback('');
+        setRatingSubmitted(false);
+
         if (switchToTab) {
           setActiveTab('history');
         }
         
         // Join SignalR group for this order
-        if (signalrConnection.current) {
+        if (signalrConnection.current && signalrConnection.current.state === "Connected") {
           await signalrConnection.current.invoke("JoinOrderGroup", orderId);
         }
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleRateOrder = async (orderId) => {
+    setSubmittingRating(true);
+    try {
+      const response = await fetch(`http://localhost:5070/api/customer/orders/${orderId}/rate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          restaurantRating: restRating,
+          restaurantFeedback: restFeedback,
+          driverRating: driverRating,
+          driverFeedback: driverFeedback
+        }),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        setRatingSubmitted(true);
+        // Refresh details to update isRated flag
+        fetchOrderDetails(orderId, false);
+        // Silently refresh restaurants to display new real-time rating average!
+        fetchRestaurants(false);
+      } else {
+        const errorData = await response.json();
+        alert(errorData.message || "Failed to submit rating");
+      }
+    } catch (err) {
+      alert("Error submitting rating: " + err.message);
+    } finally {
+      setSubmittingRating(false);
     }
   };
 
@@ -491,31 +720,173 @@ const HomePage = ({ onLogout }) => {
           style={{ 
             position: 'fixed', top: '24px', right: '24px', zIndex: 10000, 
             padding: '20px 32px', borderRadius: '24px', display: 'flex', alignItems: 'center', gap: '20px', 
-            border: '1px solid rgba(0, 243, 255, 0.3)', cursor: 'pointer',
+            border: orderNotification.status === 'Cancelled' ? '1px solid rgba(255, 77, 77, 0.5)' : orderNotification.otpCode ? '1px solid rgba(255, 200, 0, 0.5)' : '1px solid rgba(0, 243, 255, 0.3)',
+            cursor: 'pointer',
             animation: 'slideInRight 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(30px)'
+            background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(30px)',
+            maxWidth: '380px'
           }}
         >
-          <div className="pulse" style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(0, 243, 255, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #00f3ff' }}>
-            <span style={{ fontSize: '1.2rem' }}>📦</span>
+          <div className="pulse" style={{ width: '48px', height: '48px', borderRadius: '50%', background: orderNotification.status === 'Cancelled' ? 'rgba(255, 77, 77, 0.15)' : orderNotification.otpCode ? 'rgba(255, 200, 0, 0.15)' : 'rgba(0, 243, 255, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${orderNotification.status === 'Cancelled' ? '#ff4d4d' : orderNotification.otpCode ? '#ffc800' : '#00f3ff'}`, flexShrink: 0 }}>
+            <span style={{ fontSize: '1.2rem' }}>{orderNotification.status === 'Cancelled' ? '⚠️' : orderNotification.otpCode ? '🛵' : '📦'}</span>
           </div>
-          <div>
-            <h4 style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '4px' }}>Order Update!</h4>
-            <p style={{ color: '#aaa', fontSize: '0.85rem' }}>Your order from <strong style={{ color: '#fff' }}>{orderNotification.restaurantName}</strong> is now <strong style={{ color: '#00f3ff' }}>{orderNotification.status}</strong>.</p>
-            <p style={{ color: '#00f3ff', fontSize: '0.75rem', fontWeight: '700', marginTop: '4px' }}>CLICK TO TRACK →</p>
+          <div style={{ flex: 1 }}>
+            <h4 style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '4px', color: orderNotification.status === 'Cancelled' ? '#ff4d4d' : '#fff' }}>
+              {orderNotification.status === 'Cancelled' ? '⚠️ Order Cancelled' : orderNotification.otpCode ? '🚀 Driver is on the way!' : 'Order Update!'}
+            </h4>
+            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: orderNotification.otpCode ? '10px' : '0' }}>
+              {orderNotification.message ? orderNotification.message : (
+                <>Your order from <strong style={{ color: '#fff' }}>{orderNotification.restaurantName}</strong> is now <strong style={{ color: orderNotification.status === 'Cancelled' ? '#ff4d4d' : '#00f3ff' }}>{orderNotification.status}</strong>.</>
+              )}
+            </p>
+            {orderNotification.otpCode && (
+              <div style={{ background: 'rgba(255, 200, 0, 0.1)', border: '1px solid rgba(255, 200, 0, 0.4)', borderRadius: '12px', padding: '10px 16px', textAlign: 'center' }}>
+                <p style={{ fontSize: '0.7rem', color: '#aaa', fontWeight: '700', letterSpacing: '0.1em', marginBottom: '4px' }}>DELIVERY VERIFICATION CODE</p>
+                <p style={{ fontSize: '2rem', fontWeight: '900', color: '#ffc800', letterSpacing: '0.3em', fontFamily: 'monospace' }}>{orderNotification.otpCode}</p>
+                <p style={{ fontSize: '0.7rem', color: '#888', marginTop: '4px' }}>Share this code with the driver to complete delivery</p>
+              </div>
+            )}
+            {!orderNotification.otpCode && (
+              <p style={{ color: orderNotification.status === 'Cancelled' ? '#ff4d4d' : '#00f3ff', fontSize: '0.75rem', fontWeight: '700', marginTop: '4px' }}>{orderNotification.status === 'Cancelled' ? 'VIEW HISTORY' : 'CLICK TO TRACK →'}</p>
+            )}
           </div>
-          <button onClick={(e) => { e.stopPropagation(); setOrderNotification(null); }} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1.2rem', marginLeft: '20px' }}>✕</button>
+          <button onClick={(e) => { e.stopPropagation(); setOrderNotification(null); }} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1.2rem', marginLeft: '8px', flexShrink: 0 }}>✕</button>
         </div>
       )}
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
-        .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
-        .neon-btn { background: #00f3ff; color: #000; box-shadow: 0 0 20px rgba(0, 243, 255, 0.3); border: none; cursor: pointer; transition: all 0.3s; }
-        .neon-btn:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(0, 243, 255, 0.5); }
-        .card:hover { transform: translateY(-5px); border-color: rgba(0, 243, 255, 0.3); }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+        .glass {
+          background: rgba(255, 255, 255, 0.02);
+          backdrop-filter: blur(30px);
+          -webkit-backdrop-filter: blur(30px);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass:hover {
+          background: rgba(255, 255, 255, 0.04);
+          border-color: rgba(255, 255, 255, 0.08);
+          box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+        }
+        .neon-btn {
+          background: linear-gradient(135deg, #00f3ff, #0070ff);
+          color: #000;
+          font-weight: 800;
+          letter-spacing: 0.5px;
+          border: none;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: 0 4px 15px rgba(0, 243, 255, 0.2);
+        }
+        .neon-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0, 243, 255, 0.4);
+          filter: brightness(1.1);
+        }
+        .neon-btn:active {
+          transform: translateY(0);
+        }
+        .neon-btn:disabled {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          color: #444;
+          box-shadow: none;
+          cursor: not-allowed;
+          transform: none;
+        }
+        
+        .category-card {
+          min-width: 110px;
+          padding: 20px 14px;
+          border-radius: 20px;
+          text-align: center;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          border: 1px solid rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.015);
+        }
+        .category-card:hover {
+          transform: translateY(-4px);
+          background: rgba(0, 243, 255, 0.03);
+          border-color: rgba(0, 243, 255, 0.2);
+          box-shadow: 0 8px 25px rgba(0, 243, 255, 0.1);
+        }
+        .category-card.active {
+          background: rgba(0, 243, 255, 0.08);
+          border-color: rgba(0, 243, 255, 0.4);
+          box-shadow: 0 8px 30px rgba(0, 243, 255, 0.2);
+          color: #00f3ff;
+        }
+        
+        .restaurant-card {
+          border-radius: 24px;
+          overflow: hidden;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .restaurant-card:hover {
+          transform: translateY(-6px);
+          border-color: rgba(0, 243, 255, 0.25);
+          box-shadow: 0 15px 35px rgba(0, 243, 255, 0.08);
+          background: rgba(255, 255, 255, 0.03);
+        }
+        
+        .dish-card {
+          display: flex;
+          gap: 20px;
+          padding: 20px;
+          border-radius: 22px;
+          background: rgba(255, 255, 255, 0.015);
+          border: 1px solid rgba(255, 255, 255, 0.03);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .dish-card:hover {
+          transform: translateX(4px);
+          border-color: rgba(255, 255, 255, 0.06);
+          background: rgba(255, 255, 255, 0.03);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .rescue-ticket {
+          position: relative;
+          background: linear-gradient(135deg, rgba(255, 0, 85, 0.04), rgba(0, 0, 0, 0));
+          border: 1px solid rgba(255, 0, 85, 0.2);
+          border-radius: 24px;
+          padding: 24px;
+          min-height: 250px;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .rescue-ticket:hover {
+          transform: translateY(-4px);
+          border-color: rgba(255, 0, 85, 0.35);
+          box-shadow: 0 15px 35px rgba(255, 0, 85, 0.15);
+          background: linear-gradient(135deg, rgba(255, 0, 85, 0.06), rgba(0, 0, 0, 0));
+        }
+
+        .promo-card {
+          border: 1px solid rgba(255, 255, 255, 0.04);
+          background: linear-gradient(135deg, rgba(255, 255, 255, 0.01), rgba(0, 0, 0, 0));
+          border-radius: 24px;
+          padding: 24px;
+          transition: all 0.3s ease;
+          position: relative;
+        }
+        .promo-card:hover {
+          transform: translateY(-4px);
+          border-color: rgba(0, 243, 255, 0.2);
+          box-shadow: 0 10px 25px rgba(0, 243, 255, 0.05);
+        }
+
         @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
         .pulse { animation: pulse 2s infinite ease-in-out; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
       {/* Sidebar Navigation */}
@@ -553,23 +924,117 @@ const HomePage = ({ onLogout }) => {
           <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
             {!selectedRestaurant ? (
               <>
-                {/* Hero Banner: Top Deals */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(0,0,0,0))', borderRadius: '32px', padding: '40px', marginBottom: '40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid rgba(0, 243, 255, 0.1)' }}>
-                  <div>
-                    <span style={{ padding: '6px 12px', background: '#ff4d4d', color: '#fff', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '800', letterSpacing: '1px', display: 'inline-block', marginBottom: '16px' }}>LIMITED TIME OFFER</span>
-                    <h2 style={{ fontSize: '3rem', fontWeight: '900', marginBottom: '16px', lineHeight: '1.1' }}>50% OFF<br/>First Order</h2>
-                    <p style={{ color: '#aaa', fontSize: '1.1rem', marginBottom: '24px', maxWidth: '400px' }}>Dive into premium dining with our exclusive introductory offer. Use code DINE50 at checkout.</p>
-                    <button className="neon-btn" style={{ padding: '16px 32px', borderRadius: '16px', fontWeight: '800', fontSize: '1rem', letterSpacing: '1px' }}>CLAIM DEAL</button>
+                {/* Cinematic Hero Landing Header */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.12), rgba(0, 112, 255, 0.05), rgba(0,0,0,0))',
+                  borderRadius: '36px',
+                  padding: '50px 60px',
+                  marginBottom: '40px',
+                  border: '1px solid rgba(0, 243, 255, 0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '40px',
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ flex: 1.2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                      <span style={{ padding: '6px 14px', background: 'rgba(0, 243, 255, 0.1)', color: '#00f3ff', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '900', letterSpacing: '2px', border: '1px solid rgba(0, 243, 255, 0.2)' }}>PREMIUM DINING</span>
+                      <span className="pulse" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#2ecc71' }}></span>
+                      <span style={{ fontSize: '0.75rem', color: '#2ecc71', fontWeight: '800', letterSpacing: '1px' }}>24/7 LIVE DELIVERY</span>
+                    </div>
+                    <h2 style={{ fontSize: '3.6rem', fontWeight: '950', marginBottom: '16px', lineHeight: '1.05', letterSpacing: '-1.5px', background: 'linear-gradient(90deg, #fff, #888)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                      CRAVE. RESCUE.<br/>ENJOY.
+                    </h2>
+                    <p style={{ color: '#aaa', fontSize: '1.15rem', marginBottom: '32px', maxWidth: '480px', lineHeight: '1.6' }}>
+                      Experience the next generation of food delivery. Rescue high-quality chef trays at <span style={{ color: '#ff0055', fontWeight: '800' }}>50% off</span> or order fresh from premium kitchens.
+                    </p>
+                    <div style={{ display: 'flex', gap: '16px' }}>
+                      <button className="neon-btn" onClick={() => { const el = document.getElementById('restaurant-list-start'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }} style={{ padding: '18px 36px', borderRadius: '16px', fontWeight: '900', fontSize: '0.95rem' }}>
+                        EXPLORE KITCHENS
+                      </button>
+                      {rescueDeals && rescueDeals.length > 0 && (
+                        <button className="neon-btn" onClick={() => { const el = document.getElementById('flash-rescue-start'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }} style={{ background: 'rgba(255, 0, 85, 0.1)', border: '1px solid rgba(255, 0, 85, 0.3)', color: '#ff0055', boxShadow: 'none', padding: '18px 36px', borderRadius: '16px', fontWeight: '900', fontSize: '0.95rem' }}>
+                          ⚡ RESCUE FEED ({rescueDeals.length})
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '10rem', opacity: 0.8, transform: 'rotate(15deg)' }}>🍔</div>
+                  <div style={{ flex: 0.8, display: 'flex', justifyContent: 'center', position: 'relative' }}>
+                    <div className="glass" style={{ width: '280px', padding: '24px', borderRadius: '28px', border: '1px solid rgba(0, 243, 255, 0.15)', transform: 'rotate(6deg) translateY(-10px)', boxShadow: '0 20px 50px rgba(0, 243, 255, 0.15)', background: 'rgba(5, 5, 5, 0.8)' }}>
+                      <span style={{ padding: '5px 10px', background: '#ffc800', color: '#000', borderRadius: '8px', fontSize: '0.68rem', fontWeight: '900', display: 'inline-block', marginBottom: '14px' }}>WEEKLY HOT DEAL</span>
+                      <h4 style={{ fontSize: '1.3rem', fontWeight: '900', margin: '0 0 8px 0' }}>Sizzling BBQ Tray</h4>
+                      <p style={{ color: '#666', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Loaded smoked brisket, caramelized ribs & sweet coleslaw.</p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '0.8rem', color: '#666', textDecoration: 'line-through', marginRight: '6px' }}>$34.00</span>
+                          <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#00f3ff' }}>$17.00</span>
+                        </div>
+                        <span style={{ fontSize: '1.5rem' }}>🥩</span>
+                      </div>
+                    </div>
+                    {/* Background glow behind preview card */}
+                    <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'rgba(0, 243, 255, 0.15)', filter: 'blur(60px)', zIndex: -1 }}></div>
+                  </div>
                 </div>
 
-                {/* Categories */}
-                <div style={{ marginBottom: '48px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '1.8rem', fontWeight: '800' }}>Categories</h3>
+                {/* Promotional Deals Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '48px' }}>
+                  <div className="promo-card">
+                    <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>🎁</span>
+                    <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>50% OFF FIRST ORDER</h4>
+                    <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Get half off your entire checkout. Valid on orders from any restaurant.</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#00f3ff', fontWeight: '800', background: 'rgba(0, 243, 255, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(0, 243, 255, 0.15)' }}>DINE50</span>
+                      <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>New Users Only</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '10px' }}>
+
+                  <div className="promo-card">
+                    <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>💳</span>
+                    <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>$10 WALLET BONUS</h4>
+                    <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Get an extra $10 added automatically when you add $50 or more to your wallet.</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#2ecc71', fontWeight: '800', background: 'rgba(46, 204, 113, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(46, 204, 113, 0.15)' }}>FEAST10</span>
+                      <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>Active Offer</span>
+                    </div>
+                  </div>
+
+                  <div className="promo-card">
+                    <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>🛵</span>
+                    <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>FREE DELIVERY</h4>
+                    <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Enjoy zero delivery fees on orders above $30 from local top spots.</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#ffc800', fontWeight: '800', background: 'rgba(255, 200, 0, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(255, 200, 0, 0.15)' }}>FREEDEL</span>
+                      <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>{"Orders > $30"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Flash Food Rescue Deals Section */}
+                {rescueDeals && rescueDeals.length > 0 && (
+                  <div id="flash-rescue-start" style={{ marginBottom: '54px', animation: 'fadeIn 0.5s ease-out' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                      <span className="pulse" style={{ display: 'inline-flex', width: '12px', height: '12px', borderRadius: '50%', background: '#ff0055', boxShadow: '0 0 12px #ff0055' }}></span>
+                      <h3 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#fff', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                        ⚡ FLASH RESCUE FEED <span style={{ fontSize: '0.82rem', color: '#ff0055', fontWeight: '900', background: 'rgba(255, 0, 85, 0.1)', padding: '4px 12px', borderRadius: '12px', border: '1px solid rgba(255, 0, 85, 0.25)', letterSpacing: '0.5px' }}>50% OFF LIVE</span>
+                      </h3>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
+                      {rescueDeals.map(deal => (
+                        <RescueDealCard key={deal.orderId} deal={deal} onBuy={buyRescueDeal} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Categories */}
+                <div style={{ marginBottom: '54px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '1.6rem', fontWeight: '900', letterSpacing: '-0.5px' }}>Browse Categories</h3>
+                  </div>
+                  <div className="no-scrollbar" style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px' }}>
                     {[
                       { id: 'pizza', name: 'Pizza', icon: '🍕' },
                       { id: 'burger', name: 'Burger', icon: '🍔' },
@@ -577,30 +1042,42 @@ const HomePage = ({ onLogout }) => {
                       { id: 'healthy', name: 'Healthy', icon: '🥗' },
                       { id: 'dessert', name: 'Dessert', icon: '🍩' },
                       { id: 'coffee', name: 'Coffee', icon: '☕' }
-                    ].map(cat => (
-                      <div key={cat.id} onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)} className="glass" style={{ minWidth: '120px', padding: '24px 16px', borderRadius: '24px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.3s', background: selectedCategory === cat.id ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255, 255, 255, 0.03)', borderColor: selectedCategory === cat.id ? 'rgba(0, 243, 255, 0.5)' : 'rgba(255,255,255,0.05)' }}>
-                        <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>{cat.icon}</div>
-                        <h4 style={{ fontSize: '1rem', fontWeight: '700', color: selectedCategory === cat.id ? '#00f3ff' : '#fff' }}>{cat.name}</h4>
-                      </div>
-                    ))}
+                    ].filter(cat => 
+                      restaurants.some(r => 
+                        (r.description && r.description.toLowerCase().includes(cat.id)) ||
+                        (r.name && r.name.toLowerCase().includes(cat.id))
+                      )
+                    ).map(cat => {
+                      const isActive = selectedCategory === cat.id;
+                      return (
+                        <div
+                          key={cat.id}
+                          onClick={() => setSelectedCategory(isActive ? null : cat.id)}
+                          className={`category-card ${isActive ? 'active' : ''}`}
+                        >
+                          <div style={{ fontSize: '2.2rem', marginBottom: '10px', filter: isActive ? 'drop-shadow(0 0 10px rgba(0, 243, 255, 0.4))' : 'none' }}>{cat.icon}</div>
+                          <h4 style={{ fontSize: '0.92rem', fontWeight: '700', margin: 0 }}>{cat.name}</h4>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-
-                <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                {/* Restaurant List Section Header */}
+                <header id="restaurant-list-start" style={{ marginBottom: '36px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '10px' }}>
                   <div>
-                    <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '8px' }}>
-                      {selectedCategory ? 'Category Results' : 'All Restaurants'}
+                    <h2 style={{ fontSize: '2.2rem', fontWeight: '900', letterSpacing: '-0.8px', marginBottom: '6px' }}>
+                      {selectedCategory ? `Top Spots in ${selectedCategory.toUpperCase()}` : 'All Premium Kitchens'}
                     </h2>
-                    <p style={{ color: '#888' }}>Find the best meals from your favorite local spots.</p>
+                    <p style={{ color: '#888', fontSize: '0.95rem' }}>Curated list of premium kitchens and restaurants delivering near you.</p>
                   </div>
-                  <button onClick={handleLocateMe} style={{ padding: '12px 24px', borderRadius: '16px', background: nearbyOnly ? 'rgba(0, 243, 255, 0.2)' : 'rgba(255,255,255,0.05)', color: nearbyOnly ? '#00f3ff' : '#fff', border: `1px solid ${nearbyOnly ? '#00f3ff' : 'rgba(255,255,255,0.1)'}`, cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    📍 {nearbyOnly ? 'Location Set (30km)' : 'Set Location'}
+                  <button onClick={handleLocateMe} style={{ padding: '14px 28px', borderRadius: '16px', background: nearbyOnly ? 'rgba(0, 243, 255, 0.15)' : 'rgba(255,255,255,0.02)', color: nearbyOnly ? '#00f3ff' : '#fff', border: `1px solid ${nearbyOnly ? 'rgba(0, 243, 255, 0.4)' : 'rgba(255,255,255,0.06)'}`, cursor: 'pointer', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.88rem', letterSpacing: '0.5px', transition: 'all 0.3s' }}>
+                    📍 {nearbyOnly ? 'DELIVERING NEARBY' : 'SET CURRENT LOCATION'}
                   </button>
                 </header>
 
                 {showMap && (
-                  <div className="glass" style={{ marginBottom: '32px', animation: 'fadeIn 0.3s ease-out', padding: '24px', borderRadius: '24px' }}>
+                  <div className="glass" style={{ marginBottom: '36px', animation: 'fadeIn 0.3s ease-out', padding: '24px', borderRadius: '24px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                       <h3 style={{ fontSize: '1.2rem', fontWeight: '800' }}>Set Delivery Location</h3>
                       {userLocation && (
@@ -657,7 +1134,8 @@ const HomePage = ({ onLogout }) => {
                       if (!nearbyOnly || !userLocation) return true;
                       const dist = getDistanceFromLatLonInKm(userLocation.lat, userLocation.lng, r.latitude, r.longitude);
                       return dist <= 30;
-                    });
+                    })
+                    .sort((a, b) => (b.rating || 0) - (a.rating || 0));
 
                   if (filteredList.length === 0) {
                     return (
@@ -674,25 +1152,89 @@ const HomePage = ({ onLogout }) => {
                   return (
                     <>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '32px' }}>
-                        {displayedList.map(res => (
-                          <div key={res.id} onClick={() => fetchMenu(res)} className="glass card" style={{ borderRadius: '24px', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.3s' }}>
-                            <div style={{ height: '200px', background: 'linear-gradient(45deg, #111, #222)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '4rem' }}>
-                              {res.name.charAt(0)}
-                            </div>
-                            <div style={{ padding: '24px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <h3 style={{ fontSize: '1.3rem', fontWeight: '800' }}>{res.name}</h3>
-                                <span style={{ color: '#f1c40f', fontWeight: '700' }}>⭐ {res.rating.toFixed(1)}</span>
-                              </div>
-                              <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '20px' }}>{res.description}</p>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ padding: '4px 12px', borderRadius: '20px', background: res.isOpen ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255,255,255,0.05)', color: res.isOpen ? '#2ecc71' : '#666', fontSize: '0.8rem', fontWeight: '700' }}>
+                        {displayedList.map(res => {
+                          const dist = userLocation ? getDistanceFromLatLonInKm(userLocation.lat, userLocation.lng, res.latitude, res.longitude) : null;
+                          return (
+                            <div
+                              key={res.id}
+                              onClick={() => fetchMenu(res)}
+                              className="restaurant-card"
+                            >
+                              <div style={{
+                                height: '180px',
+                                background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.08), rgba(0, 112, 255, 0.03))',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                position: 'relative'
+                              }}>
+                                <div style={{
+                                  width: '80px',
+                                  height: '80px',
+                                  borderRadius: '50%',
+                                  background: 'rgba(5,5,5,0.85)',
+                                  border: '1px solid rgba(0, 243, 255, 0.25)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '2.5rem',
+                                  fontWeight: '900',
+                                  color: '#00f3ff',
+                                  boxShadow: '0 8px 25px rgba(0, 243, 255, 0.15)'
+                                }}>
+                                  {res.name.charAt(0)}
+                                </div>
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '16px',
+                                  right: '16px',
+                                  padding: '5px 12px',
+                                  borderRadius: '20px',
+                                  background: res.isOpen ? 'rgba(46, 204, 113, 0.15)' : 'rgba(255,255,255,0.05)',
+                                  color: res.isOpen ? '#2ecc71' : '#666',
+                                  fontSize: '0.68rem',
+                                  fontWeight: '900',
+                                  border: `1px solid ${res.isOpen ? 'rgba(46, 204, 113, 0.25)' : 'rgba(255,255,255,0.08)'}`,
+                                  letterSpacing: '0.5px'
+                                }}>
                                   {res.isOpen ? 'OPEN NOW' : 'CLOSED'}
                                 </span>
+                                {dist !== null && (
+                                  <span style={{
+                                    position: 'absolute',
+                                    bottom: '16px',
+                                    left: '16px',
+                                    padding: '4px 10px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(0,0,0,0.6)',
+                                    color: '#aaa',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '700'
+                                  }}>
+                                    📍 {dist.toFixed(1)} km
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ padding: '24px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                  <h3 style={{ fontSize: '1.25rem', fontWeight: '850', margin: 0, color: '#fff' }}>{res.name}</h3>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(241, 196, 15, 0.08)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(241, 196, 15, 0.15)' }}>
+                                    <span style={{ color: '#f1c40f', fontSize: '0.78rem' }}>⭐</span>
+                                    <span style={{ color: '#f1c40f', fontWeight: '900', fontSize: '0.78rem' }}>{res.rating.toFixed(1)}</span>
+                                  </div>
+                                </div>
+                                <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '20px', lineHeight: '1.4', height: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                  {res.description || 'No description available for this premium dining kitchen.'}
+                                </p>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '16px' }}>
+                                  <span style={{ color: '#666', fontSize: '0.78rem', fontWeight: '700' }}>⭐ TOP RATED</span>
+                                  <span style={{ color: '#00f3ff', fontSize: '0.8rem', fontWeight: '800' }}>BROWSE MENU →</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {visibleCount < filteredList.length && (
@@ -723,81 +1265,168 @@ const HomePage = ({ onLogout }) => {
               </>
             ) : (
               <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
-                <button onClick={() => setSelectedRestaurant(null)} style={{ background: 'none', border: 'none', color: '#00f3ff', cursor: 'pointer', marginBottom: '32px', fontWeight: '600' }}>← BACK TO EXPLORE</button>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '60px' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-                      <h3 style={{ fontSize: '1.5rem', fontWeight: '800' }}>Menu</h3>
-                      <span style={{ color: '#aaa', fontSize: '0.9rem' }}>{menu.length} items available</span>
+                {/* Premium Restaurant Header Cover */}
+                <div style={{
+                  position: 'relative',
+                  borderRadius: '28px',
+                  padding: '40px',
+                  marginBottom: '40px',
+                  background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.15), rgba(0, 112, 255, 0.05))',
+                  border: '1px solid rgba(0, 243, 255, 0.15)',
+                  boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  overflow: 'hidden'
+                }}>
+                  <div>
+                    <button 
+                      onClick={() => setSelectedRestaurant(null)} 
+                      style={{ 
+                        background: 'rgba(255,255,255,0.03)', 
+                        border: '1px solid rgba(255,255,255,0.08)', 
+                        color: '#00f3ff', 
+                        cursor: 'pointer', 
+                        marginBottom: '20px', 
+                        fontWeight: '700',
+                        padding: '10px 18px',
+                        borderRadius: '12px',
+                        fontSize: '0.82rem',
+                        letterSpacing: '0.5px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0, 243, 255, 0.1)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                    >
+                      ← BACK TO EXPLORE
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <h2 style={{ fontSize: '2.5rem', fontWeight: '900', margin: 0, letterSpacing: '-1px' }}>{selectedRestaurant.name}</h2>
+                      <span style={{ 
+                        padding: '4px 10px', 
+                        borderRadius: '8px', 
+                        background: selectedRestaurant.isOpen ? 'rgba(46, 204, 113, 0.15)' : 'rgba(255,255,255,0.05)', 
+                        color: selectedRestaurant.isOpen ? '#2ecc71' : '#666', 
+                        fontSize: '0.7rem', 
+                        fontWeight: '900',
+                        border: `1px solid ${selectedRestaurant.isOpen ? 'rgba(46, 204, 113, 0.25)' : 'rgba(255,255,255,0.08)'}`
+                      }}>
+                        {selectedRestaurant.isOpen ? 'OPEN' : 'CLOSED'}
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    <p style={{ color: '#aaa', fontSize: '1rem', marginTop: '8px', maxWidth: '600px', lineHeight: '1.5' }}>{selectedRestaurant.description}</p>
+                    <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginTop: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(241, 196, 15, 0.1)', padding: '5px 12px', borderRadius: '10px', border: '1px solid rgba(241, 196, 15, 0.2)' }}>
+                        <span style={{ color: '#f1c40f', fontSize: '0.85rem' }}>⭐</span>
+                        <span style={{ color: '#f1c40f', fontWeight: '900', fontSize: '0.85rem' }}>{selectedRestaurant.rating.toFixed(1)} / 5.0</span>
+                      </div>
+                      <span style={{ color: '#666', fontSize: '0.9rem' }}>•</span>
+                      <span style={{ color: '#aaa', fontSize: '0.9rem', fontWeight: '600' }}>🏪 {selectedRestaurant.address}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '7rem', opacity: 0.25, transform: 'rotate(-10deg)', userSelect: 'none' }}>🍽️</div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '48px', alignItems: 'flex-start' }}>
+                  {/* Left Column: Menu list */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                      <h3 style={{ fontSize: '1.4rem', fontWeight: '900', letterSpacing: '-0.5px', margin: 0 }}>Available Offerings</h3>
+                      <span style={{ color: '#666', fontSize: '0.88rem', fontWeight: '700' }}>{menu.length} CHEF SELECTIONS</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                       {menu.map(item => (
-                        <div key={item.id} className="glass" style={{ display: 'flex', gap: '24px', padding: '24px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                          <div style={{ width: '120px', height: '120px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div key={item.id} className="dish-card">
+                          <div style={{ width: '130px', height: '130px', borderRadius: '18px', background: 'rgba(0,0,0,0.3)', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.03)' }}>
                             {item.imageUrl ? (
-                              <img src={`http://localhost:5070${item.imageUrl}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={`http://localhost:5070${item.imageUrl}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={item.name} />
                             ) : (
-                              <span style={{ fontSize: '2.5rem' }}>🍔</span>
+                              <span style={{ fontSize: '2.8rem' }}>🍔</span>
                             )}
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                              <h4 style={{ fontSize: '1.3rem', fontWeight: '800' }}>{item.name}</h4>
-                              <span style={{ fontSize: '1.2rem', fontWeight: '900', color: '#00f3ff' }}>${item.price.toFixed(2)}</span>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                <h4 style={{ fontSize: '1.2rem', fontWeight: '850', color: '#fff', margin: 0 }}>{item.name}</h4>
+                                <span style={{ fontSize: '1.25rem', fontWeight: '950', color: '#00f3ff' }}>${item.price.toFixed(2)}</span>
+                              </div>
+                              <p style={{ color: '#888', fontSize: '0.9rem', lineHeight: '1.4', marginTop: '6px', marginBottom: '16px' }}>{item.description}</p>
                             </div>
-                            <p style={{ color: '#888', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '16px' }}>{item.description}</p>
-                            <button onClick={() => addToCart(item)} className="neon-btn" style={{ padding: '8px 24px', borderRadius: '12px', fontWeight: '800', fontSize: '0.85rem' }}>+ ADD TO TRAY</button>
+                            <button onClick={() => addToCart(item)} className="neon-btn" style={{ padding: '10px 24px', borderRadius: '12px', fontWeight: '900', fontSize: '0.8rem', width: 'fit-content' }}>
+                              + ADD TO TRAY
+                            </button>
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Cart */}
-                  <div className="glass" style={{ padding: '40px', borderRadius: '32px', height: 'fit-content', position: 'sticky', top: '60px' }}>
-                    <h3 style={{ fontSize: '1.5rem', fontWeight: '800', marginBottom: '32px' }}>Your Tray</h3>
+                  {/* Right Column: Sticky Cart Drawer */}
+                  <div className="glass" style={{ padding: '36px', borderRadius: '28px', border: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: '40px', background: 'rgba(5, 5, 5, 0.8)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+                      <h3 style={{ fontSize: '1.4rem', fontWeight: '900', margin: 0 }}>Your Tray</h3>
+                      <span style={{ padding: '4px 10px', background: 'rgba(0, 243, 255, 0.1)', color: '#00f3ff', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '800' }}>
+                        {cart.reduce((sum, i) => sum + i.quantity, 0)} items
+                      </span>
+                    </div>
+
                     {cart.length === 0 ? (
-                      <p style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>Hungry? Add something delicious.</p>
+                      <div style={{ textAlign: 'center', padding: '40px 0', color: '#444' }}>
+                        <span style={{ fontSize: '3rem', display: 'block', marginBottom: '16px' }}>📭</span>
+                        <p style={{ fontWeight: '700', fontSize: '0.95rem', color: '#666', margin: 0 }}>Tray is currently empty</p>
+                        <p style={{ fontSize: '0.8rem', color: '#444', marginTop: '6px' }}>Add premium chef plates from the menu listing to begin checkout.</p>
+                      </div>
                     ) : (
                       <>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '32px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '28px', maxHeight: '240px', overflowY: 'auto', paddingRight: '8px' }} className="custom-scrollbar">
                           {cart.map(item => (
-                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                               <div>
-                                <p style={{ fontWeight: '600' }}>{item.quantity}x {item.name}</p>
-                                <p style={{ fontSize: '0.8rem', color: '#666' }}>${item.price.toFixed(2)} ea</p>
+                                <p style={{ fontWeight: '700', color: '#fff', fontSize: '0.92rem', margin: 0 }}>{item.quantity}x {item.name}</p>
+                                <p style={{ fontSize: '0.78rem', color: '#666', margin: '2px 0 0 0' }}>${item.price.toFixed(2)} ea</p>
                               </div>
-                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                <span style={{ fontWeight: '800' }}>${(item.price * item.quantity).toFixed(2)}</span>
-                                <button onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
+                              <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                                <span style={{ fontWeight: '900', color: '#eee', fontSize: '0.92rem' }}>${(item.price * item.quantity).toFixed(2)}</span>
+                                <button 
+                                  onClick={() => removeFromCart(item.id)} 
+                                  style={{ background: 'rgba(255,0,0,0.08)', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '0.9rem', width: '24px', height: '24px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,0,0,0.15)'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,0,0,0.08)'}
+                                >
+                                  ×
+                                </button>
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '24px', marginBottom: '32px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', color: '#888', marginBottom: '12px' }}>
+
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', marginBottom: '28px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.92rem', color: '#888', marginBottom: '12px' }}>
                             <span>Subtotal</span>
-                            <span>${cart.reduce((sum, i) => sum + (i.price * i.quantity), 0).toFixed(2)}</span>
+                            <span style={{ color: '#eee', fontWeight: '600' }}>${cart.reduce((sum, i) => sum + (i.price * i.quantity), 0).toFixed(2)}</span>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', color: '#888', marginBottom: '20px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.92rem', color: '#888', marginBottom: '20px' }}>
                             <span>Delivery Fee</span>
-                            <span>$5.00</span>
+                            <span style={{ color: '#eee', fontWeight: '600' }}>$5.00</span>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.3rem', fontWeight: '800', marginBottom: '20px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: '900', marginBottom: '24px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
                             <span>Total</span>
                             <span style={{ color: '#00f3ff' }}>${(cart.reduce((sum, i) => sum + (i.price * i.quantity), 0) + 5).toFixed(2)}</span>
                           </div>
 
-                          <div style={{ marginBottom: '20px' }}>
-                            <label style={{ display: 'block', fontSize: '0.85rem', color: '#888', marginBottom: '8px', fontWeight: '700' }}>DELIVERY ADDRESS</label>
+                          <div style={{ marginBottom: '24px' }}>
+                            <label style={{ display: 'block', fontSize: '0.72rem', color: '#666', marginBottom: '8px', fontWeight: '800', letterSpacing: '0.8px', textTransform: 'uppercase' }}>DELIVERY ADDRESS</label>
                             {profileData.addresses && profileData.addresses.length > 0 ? (
                               <select 
                                 value={selectedDeliveryAddress || ''} 
                                 onChange={e => setSelectedDeliveryAddress(e.target.value)}
-                                style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                                style={{ width: '100%', padding: '14px', borderRadius: '14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '0.9rem', outline: 'none' }}
                               >
                                 {profileData.addresses.map(addr => (
-                                  <option key={addr.id} value={addr.id} style={{ background: '#111', color: '#fff' }}>
+                                  <option key={addr.id} value={addr.id} style={{ background: '#0a0a0a', color: '#fff' }}>
                                     {addr.addressLine}, {addr.city}
                                   </option>
                                 ))}
@@ -806,15 +1435,30 @@ const HomePage = ({ onLogout }) => {
                               <button 
                                 onClick={() => { setShowAddAddressModal(true); setActiveTab('profile'); }}
                                 className="neon-btn"
-                                style={{ width: '100%', padding: '12px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '700' }}
+                                style={{ width: '100%', padding: '14px', borderRadius: '14px', fontSize: '0.85rem', fontWeight: '800' }}
                               >
                                 + ADD DELIVERY ADDRESS
                               </button>
                             )}
                           </div>
                         </div>
-                        <button onClick={handlePlaceOrder} disabled={isPlacingOrder || !selectedDeliveryAddress} className="neon-btn" style={{ width: '100%', padding: '20px', borderRadius: '16px', fontWeight: '800', fontSize: '1rem', letterSpacing: '1px' }}>
-                          {isPlacingOrder ? 'TRANSMITTING...' : 'PLACE ORDER'}
+
+                        <button 
+                          onClick={handlePlaceOrder} 
+                          disabled={isPlacingOrder || !selectedDeliveryAddress} 
+                          className="neon-btn" 
+                          style={{ 
+                            width: '100%', 
+                            padding: '18px', 
+                            borderRadius: '16px', 
+                            fontWeight: '900', 
+                            fontSize: '0.95rem', 
+                            letterSpacing: '1px',
+                            background: 'linear-gradient(135deg, #2ecc71, #27ae60)',
+                            boxShadow: '0 8px 25px rgba(46, 204, 113, 0.15)'
+                          }}
+                        >
+                          {isPlacingOrder ? 'TRANSMITTING ORDER…' : 'PLACE ORDER'}
                         </button>
                       </>
                     )}
@@ -929,19 +1573,187 @@ const HomePage = ({ onLogout }) => {
                       <span>Total</span>
                       <span style={{ color: '#00f3ff' }}>${trackingOrder.totalAmount.toFixed(2)}</span>
                     </div>
-                    {trackingOrder.status === 'Placed' && (
+                    {['Placed', 'Accepted', 'Preparing', 'Ready'].includes(trackingOrder.status) && (
                       <button 
-                        onClick={() => cancelOrder(trackingOrder.id)}
-                        style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,77,77,0.1)', border: '1px solid #ff4d4d', color: '#ff4d4d', fontWeight: '800', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onClick={() => cancelOrder(trackingOrder.id, trackingOrder.status)}
+                        style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,77,77,0.1)', border: '1px solid #ff4d4d', color: '#ff4d4d', fontWeight: '800', cursor: 'pointer', transition: 'all 0.2s', marginTop: '20px' }}
                       >
                         CANCEL ORDER
                       </button>
                     )}
                   </div>
-                  <div className="glass" style={{ padding: '30px', borderRadius: '24px' }}>
-                    <h4 style={{ marginBottom: '20px', color: '#666', fontWeight: '700' }}>DELIVERY TO</h4>
-                    <p style={{ fontWeight: '600' }}>{trackingOrder.customerName || 'Customer'}</p>
-                    <p style={{ color: '#666', fontSize: '0.9rem', marginTop: '8px' }}>Your pinned address in the system.</p>
+                  <div className="glass" style={{ padding: '30px', borderRadius: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <h4 style={{ marginBottom: '10px', color: '#666', fontWeight: '700' }}>DELIVERY TO</h4>
+                      <p style={{ fontWeight: '700', fontSize: '1.05rem', color: '#fff' }}>{trackingOrder.customerName || 'Customer'}</p>
+                      <p style={{ color: '#888', fontSize: '0.85rem', marginTop: '6px', lineHeight: '1.4' }}>{trackingOrder.customerAddress || 'Your pinned address in the system.'}</p>
+                      {trackingOrder.status === 'Delivered' && (
+                        <div style={{ marginTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '700', display: 'block', marginBottom: '4px', textTransform: 'uppercase' }}>Delivery Partner</span>
+                          <p style={{ fontWeight: '700', fontSize: '1rem', color: '#2ecc71', margin: 0 }}>
+                            🛵 {trackingOrder.driverName || 'Authorized Delivery Professional'}
+                          </p>
+                          <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '12px', textTransform: 'uppercase' }}>Delivery Status</span>
+                          <p style={{ fontWeight: '700', fontSize: '1rem', color: '#fff', margin: 0 }}>
+                            ✅ Handed over successfully
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {trackingOrder.status === 'Delivered' && (
+                      <div style={{ marginTop: '24px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px' }}>
+                        <h4 style={{ fontSize: '0.9rem', color: '#00f3ff', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '16px' }}>
+                          Rate & Review your Order
+                        </h4>
+                        
+                        {trackingOrder.isRated || ratingSubmitted ? (
+                          <div className="glass" style={{ padding: '16px', borderRadius: '12px', background: 'rgba(46,204,113,0.08)', border: '1px solid rgba(46,204,113,0.2)', textAlign: 'center' }}>
+                            <span style={{ fontSize: '1.5rem' }}>✨</span>
+                            <p style={{ margin: '8px 0 0 0', fontSize: '0.9rem', fontWeight: '700', color: '#2ecc71' }}>Thank you for your feedback!</p>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#aaa' }}>Your ratings help us improve our service.</p>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {/* Restaurant Rating */}
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                              <span style={{ fontSize: '0.78rem', color: '#eee', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
+                                Rate Restaurant: <span style={{ color: '#00f3ff' }}>{trackingOrder.restaurantName}</span>
+                              </span>
+                              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <button 
+                                    key={star}
+                                    onClick={() => setRestRating(star)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      fontSize: '1.4rem',
+                                      color: star <= restRating ? '#f39c12' : '#444',
+                                      padding: 0,
+                                      transition: 'transform 0.1s'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                  >
+                                    ★
+                                  </button>
+                                ))}
+                              </div>
+                              <input 
+                                type="text"
+                                placeholder="Write restaurant feedback..."
+                                value={restFeedback}
+                                onChange={e => setRestFeedback(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid rgba(255,255,255,0.08)',
+                                  color: '#fff',
+                                  fontSize: '0.8rem',
+                                  fontFamily: 'Outfit, sans-serif'
+                                }}
+                              />
+                            </div>
+
+                            {/* Driver Rating */}
+                            {trackingOrder.driverName && (
+                              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                                <span style={{ fontSize: '0.78rem', color: '#eee', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
+                                  Rate Driver: <span style={{ color: '#00f3ff' }}>{trackingOrder.driverName}</span>
+                                </span>
+                                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <button 
+                                      key={star}
+                                      onClick={() => setDriverRating(star)}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        fontSize: '1.4rem',
+                                        color: star <= driverRating ? '#f39c12' : '#444',
+                                        padding: 0,
+                                        transition: 'transform 0.1s'
+                                      }}
+                                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                      ★
+                                    </button>
+                                  ))}
+                                </div>
+                                <input 
+                                  type="text"
+                                  placeholder="Write driver feedback..."
+                                  value={driverFeedback}
+                                  onChange={e => setDriverFeedback(e.target.value)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(0,0,0,0.3)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    color: '#fff',
+                                    fontSize: '0.8rem',
+                                    fontFamily: 'Outfit, sans-serif'
+                                  }}
+                                />
+                              </div>
+                            )}
+
+                            <button
+                              onClick={() => handleRateOrder(trackingOrder.id)}
+                              disabled={submittingRating}
+                              style={{
+                                width: '100%',
+                                padding: '12px',
+                                borderRadius: '10px',
+                                background: 'linear-gradient(135deg, #00f3ff 0%, #0070ff 100%)',
+                                border: 'none',
+                                color: '#000',
+                                fontWeight: '800',
+                                fontSize: '0.85rem',
+                                cursor: 'pointer',
+                                letterSpacing: '1px',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 243, 255, 0.4)'}
+                              onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+                            >
+                              {submittingRating ? 'SUBMITTING...' : 'SUBMIT FEEDBACK'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {trackingOrder.status === 'Picked' && trackingOrder.deliveryOtp && (
+                      <div className="glass" style={{ padding: '20px', borderRadius: '16px', border: '1px solid rgba(0, 243, 255, 0.3)', background: 'rgba(0, 243, 255, 0.05)', textAlign: 'center', marginTop: '10px' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#00f3ff', fontWeight: '800', letterSpacing: '2px', display: 'block', marginBottom: '8px' }}>DELIVERY VERIFICATION CODE</span>
+                        <span style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fff', letterSpacing: '8px', textShadow: '0 0 10px rgba(255,255,255,0.5)' }}>{trackingOrder.deliveryOtp}</span>
+                        <p style={{ fontSize: '0.75rem', color: '#888', marginTop: '8px', margin: 0 }}>Please share this 4-digit code with the driver to complete delivery.</p>
+                      </div>
+                    )}
+
+                    {/* Interactive Real-Time Map Tracking */}
+                    {trackingOrder.status !== 'Delivered' && trackingOrder.customerLatitude && trackingOrder.customerLongitude && (
+                      <div style={{ marginTop: '10px' }}>
+                        <OrderTrackingMap 
+                          customerCoords={{ lat: trackingOrder.customerLatitude, lng: trackingOrder.customerLongitude }}
+                          restaurantCoords={{ lat: trackingOrder.restaurantLatitude, lng: trackingOrder.restaurantLongitude }}
+                          driverCoords={
+                            trackingOrder.driverLatitude && trackingOrder.driverLongitude 
+                              ? { lat: trackingOrder.driverLatitude, lng: trackingOrder.driverLongitude } 
+                              : null
+                          }
+                          orderStatus={trackingOrder.status}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -950,45 +1762,101 @@ const HomePage = ({ onLogout }) => {
         )}
 
         {activeTab === 'profile' && (
-          <div style={{ animation: 'fadeIn 0.5s ease-out', maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ animation: 'fadeIn 0.5s ease-out', maxWidth: '860px', margin: '0 auto' }}>
             <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '40px' }}>Your Profile</h2>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '30px' }}>
-              {/* Personal Info */}
-              <div className="glass" style={{ padding: '30px', borderRadius: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h3 style={{ fontSize: '1.3rem', fontWeight: '800' }}>Personal Info</h3>
-                  {isEditingProfile ? (
-                    <button onClick={handleSaveProfile} style={{ background: 'none', border: 'none', color: '#00f3ff', cursor: 'pointer', fontWeight: '700' }}>SAVE</button>
-                  ) : (
-                    <button onClick={() => setIsEditingProfile(true)} style={{ background: 'none', border: 'none', color: '#00f3ff', cursor: 'pointer', fontWeight: '700' }}>EDIT</button>
-                  )}
-                </div>
-                
+
+            {/* Avatar + Personal Info */}
+            <div className="glass" style={{ padding: '36px', borderRadius: '28px', marginBottom: '28px', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: '800' }}>Personal Info</h3>
                 {isEditingProfile ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div>
-                      <label style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px', display: 'block' }}>Name</label>
-                      <input type="text" value={profileData.name} onChange={e => setProfileData({...profileData, name: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px', display: 'block' }}>Email (Read-only)</label>
-                      <input type="email" disabled value={profileData.email} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', color: '#888' }} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px', display: 'block' }}>Phone</label>
-                      <input type="text" value={profileData.phone} placeholder="e.g. +1 234 567 8900" onChange={e => setProfileData({...profileData, phone: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} />
-                    </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button onClick={() => setIsEditingProfile(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontWeight: '700' }}>CANCEL</button>
+                    <button onClick={handleSaveProfile} style={{ padding: '8px 20px', borderRadius: '12px', background: 'rgba(0, 243, 255, 0.15)', border: '1px solid #00f3ff', color: '#00f3ff', cursor: 'pointer', fontWeight: '800' }}>SAVE CHANGES</button>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', color: '#ccc' }}>
-                    <p><strong style={{ color: '#fff' }}>Name:</strong> {profileData.name}</p>
-                    <p><strong style={{ color: '#fff' }}>Email:</strong> {profileData.email}</p>
-                    <p><strong style={{ color: '#fff' }}>Phone:</strong> {profileData.phone || 'Not set'}</p>
-                  </div>
+                  <button onClick={() => setIsEditingProfile(true)} style={{ padding: '8px 20px', borderRadius: '12px', background: 'rgba(0, 243, 255, 0.08)', border: '1px solid rgba(0, 243, 255, 0.2)', color: '#00f3ff', cursor: 'pointer', fontWeight: '700' }}>✏️ EDIT</button>
                 )}
               </div>
 
+              <div style={{ display: 'flex', gap: '36px', alignItems: 'flex-start' }}>
+                {/* Avatar */}
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ width: '100px', height: '100px', borderRadius: '50%', border: '2px solid rgba(0, 243, 255, 0.3)', overflow: 'hidden', background: 'rgba(0, 243, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                    {profileData.profileImageUrl ? (
+                      <img src={profileData.profileImageUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: '2.8rem', fontWeight: '900', color: '#00f3ff' }}>{profileData.name?.charAt(0).toUpperCase()}</span>
+                    )}
+                  </div>
+                  {isEditingProfile && (
+                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                      <label style={{ fontSize: '0.72rem', color: '#00f3ff', cursor: 'pointer', fontWeight: '700' }}>CHANGE URL</label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Fields */}
+                <div style={{ flex: 1 }}>
+                  {isEditingProfile ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: '#888', marginBottom: '6px', display: 'block', fontWeight: '600', letterSpacing: '0.5px' }}>FULL NAME</label>
+                        <input type="text" value={profileData.name} onChange={e => setProfileData({...profileData, name: e.target.value})} style={{ width: '100%', padding: '13px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: '#888', marginBottom: '6px', display: 'block', fontWeight: '600', letterSpacing: '0.5px' }}>PHONE</label>
+                        <input type="text" value={profileData.phone} placeholder="+1 234 567 8900" onChange={e => setProfileData({...profileData, phone: e.target.value})} style={{ width: '100%', padding: '13px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: '0.78rem', color: '#888', marginBottom: '6px', display: 'block', fontWeight: '600', letterSpacing: '0.5px' }}>EMAIL (READ-ONLY)</label>
+                        <input type="email" disabled value={profileData.email} style={{ width: '100%', padding: '13px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', color: '#555', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: '#888', marginBottom: '6px', display: 'block', fontWeight: '600', letterSpacing: '0.5px' }}>DATE OF BIRTH</label>
+                        <input
+                          type="date"
+                          value={profileData.dateOfBirth ? profileData.dateOfBirth.substring(0, 10) : ''}
+                          onChange={e => setProfileData({...profileData, dateOfBirth: e.target.value})}
+                          style={{ width: '100%', padding: '13px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.95rem', colorScheme: 'dark', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: '#888', marginBottom: '6px', display: 'block', fontWeight: '600', letterSpacing: '0.5px' }}>GENDER</label>
+                        <select value={profileData.gender || ''} onChange={e => setProfileData({...profileData, gender: e.target.value})} style={{ width: '100%', padding: '13px 16px', borderRadius: '14px', background: '#111', border: '1px solid rgba(255,255,255,0.12)', color: profileData.gender ? '#fff' : '#666', fontSize: '0.95rem', boxSizing: 'border-box' }}>
+                          <option value="" style={{ color: '#666' }}>Select gender</option>
+                          <option value="Male" style={{ color: '#fff' }}>Male</option>
+                          <option value="Female" style={{ color: '#fff' }}>Female</option>
+                          <option value="Non-binary" style={{ color: '#fff' }}>Non-binary</option>
+                          <option value="Prefer not to say" style={{ color: '#fff' }}>Prefer not to say</option>
+                        </select>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: '0.78rem', color: '#888', marginBottom: '6px', display: 'block', fontWeight: '600', letterSpacing: '0.5px' }}>PROFILE IMAGE URL (OPTIONAL)</label>
+                        <input type="text" value={profileData.profileImageUrl || ''} placeholder="https://example.com/your-photo.jpg" onChange={e => setProfileData({...profileData, profileImageUrl: e.target.value || null})} style={{ width: '100%', padding: '13px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                      {[
+                        { label: 'Full Name', value: profileData.name },
+                        { label: 'Phone', value: profileData.phone || '—' },
+                        { label: 'Email', value: profileData.email },
+                        { label: 'Gender', value: profileData.gender || '—' },
+                        { label: 'Date of Birth', value: profileData.dateOfBirth ? new Date(profileData.dateOfBirth).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—' },
+                      ].map(({ label, value }) => (
+                        <div key={label} style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                          <p style={{ fontSize: '0.75rem', color: '#666', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '6px' }}>{label.toUpperCase()}</p>
+                          <p style={{ fontSize: '1rem', fontWeight: '700', color: '#fff' }}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '28px', marginBottom: '28px' }}>
               {/* Wallet */}
               <div className="glass" style={{ padding: '30px', borderRadius: '24px', background: 'linear-gradient(135deg, rgba(46, 204, 113, 0.1), rgba(0,0,0,0))', border: '1px solid rgba(46, 204, 113, 0.2)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
@@ -1000,6 +1868,27 @@ const HomePage = ({ onLogout }) => {
                   <h1 style={{ fontSize: '3.5rem', fontWeight: '900', color: '#fff' }}>${(profileData.walletBalance || 0).toFixed(2)}</h1>
                 </div>
                 <p style={{ color: '#aaa', fontSize: '0.85rem', marginTop: '20px' }}>Refunds from cancelled orders are automatically credited here.</p>
+              </div>
+
+              {/* Quick Stats */}
+              <div className="glass" style={{ padding: '30px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '4px' }}>Activity Summary</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ color: '#888', fontWeight: '600' }}>Total Orders</span>
+                  <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#00f3ff' }}>{myOrders.length}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ color: '#888', fontWeight: '600' }}>Delivered</span>
+                  <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#2ecc71' }}>{myOrders.filter(o => o.status === 'Delivered').length}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ color: '#888', fontWeight: '600' }}>Cancelled</span>
+                  <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#ff4d4d' }}>{myOrders.filter(o => o.status === 'Cancelled').length}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0' }}>
+                  <span style={{ color: '#888', fontWeight: '600' }}>Saved Addresses</span>
+                  <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#f39c12' }}>{profileData.addresses?.length || 0}</span>
+                </div>
               </div>
             </div>
 
