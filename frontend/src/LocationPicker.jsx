@@ -11,7 +11,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png'
 });
 
-const LocationMarker = ({ position, setPosition }) => {
+const LocationMarker = ({ position, setPosition, onConfirm }) => {
   useMapEvents({
     click(e) {
       setPosition({
@@ -19,12 +19,19 @@ const LocationMarker = ({ position, setPosition }) => {
         lng: parseFloat(e.latlng.lng.toFixed(4))
       });
     },
+    dblclick(e) {
+      setPosition({
+        lat: parseFloat(e.latlng.lat.toFixed(4)),
+        lng: parseFloat(e.latlng.lng.toFixed(4))
+      });
+      if (onConfirm) onConfirm();
+    }
   });
 
   return position ? <Marker position={position} /> : null;
 };
 
-const LocationPicker = ({ lat, lng, onLocationSelect }) => {
+const LocationPicker = ({ lat, lng, onLocationSelect, onConfirm }) => {
   const [position, setPosition] = useState(
     lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null
   );
@@ -46,12 +53,13 @@ const LocationPicker = ({ lat, lng, onLocationSelect }) => {
         center={position || [11.1202, 76.1200]} 
         zoom={position ? 15 : 6} 
         style={{ height: '100%', width: '100%' }}
+        doubleClickZoom={false}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
-        <LocationMarker position={position} setPosition={handleSetPosition} />
+        <LocationMarker position={position} setPosition={handleSetPosition} onConfirm={onConfirm} />
       </MapContainer>
     </div>
   );

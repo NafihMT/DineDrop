@@ -89,10 +89,8 @@ namespace DineDrop.API.Controllers
             }
         }
 
-        /// <summary>
-        /// POST /api/driver/pickup-order/{orderId}
-        /// Marks an order as picked up by the driver at the restaurant.
-        /// </summary>
+       
+  
         [HttpPost("pickup-order/{orderId}")]
         public async Task<IActionResult> PickupOrder(Guid orderId)
         {

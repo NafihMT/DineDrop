@@ -20,7 +20,7 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task UpdateDriverLocationAsync(Guid driverId, double latitude, double longitude)
         {
-            // Note: StackExchange.Redis GeoAdd takes longitude first, then latitude
+            // longitude first, then latitude
             await _db.GeoAddAsync(DriverGeoKey, longitude, latitude, driverId.ToString());
         }
 
@@ -35,7 +35,6 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task<List<Guid>> GetNearbyDriversAsync(double latitude, double longitude, double radiusKm)
         {
-            // GeoRadius uses longitude first, then latitude
             var results = await _db.GeoRadiusAsync(DriverGeoKey, longitude, latitude, radiusKm, GeoUnit.Kilometers);
             
             var list = new List<Guid>();
@@ -108,7 +107,6 @@ namespace DineDrop.Infrastructure.Services
                             }
                             else
                             {
-                                // Remove expired item asynchronously
                                 _ = _db.HashDeleteAsync("rescue_deals", entry.Name);
                             }
                         }

@@ -10,8 +10,12 @@ namespace DineDrop.Application.Modules.Restaurants.DTOs
         public string CustomerName { get; set; } = string.Empty;
         public decimal TotalAmount { get; set; }
         public decimal DeliveryFee { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public string? CouponCode { get; set; }
         public OrderStatus Status { get; set; }
         public DateTime CreatedAt { get; set; }
+        public int? RestaurantRating { get; set; }
+        public string? RestaurantFeedback { get; set; }
         public List<RestaurantOrderItemDto> Items { get; set; } = new();
     }
 

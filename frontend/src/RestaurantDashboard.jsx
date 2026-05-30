@@ -17,6 +17,8 @@ const RestaurantDashboard = ({ onLogout }) => {
   
   // Profile state
   const [profile, setProfile] = useState({ name: '', description: '', address: '', businessType: '', businessHours: '', isOpen: true, latitude: '', longitude: '' });
+  const [profileImageFile, setProfileImageFile] = useState(null);
+  const [profilePreviewUrl, setProfilePreviewUrl] = useState(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   
   // Orders state
@@ -24,6 +26,11 @@ const RestaurantDashboard = ({ onLogout }) => {
   const [history, setHistory] = useState([]);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const signalrConnection = useRef(null);
+  
+  // Offers state
+  const [offers, setOffers] = useState([]);
+  const [newOffer, setNewOffer] = useState({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' });
+  const [showOfferForm, setShowOfferForm] = useState(false);
 
   // Pagination state for history
   const [historyPage, setHistoryPage] = useState(1);
@@ -33,7 +40,7 @@ const RestaurantDashboard = ({ onLogout }) => {
   const [stats, setStats] = useState({ todayRevenue: 0, activeOrdersCount: 0, totalOrdersCount: 0, averageOrderValue: 0, revenueChart: [] });
 
   // Form states
-  const [newItem, setNewItem] = useState({ name: '', description: '', price: '', categoryName: '' });
+  const [newItem, setNewItem] = useState({ name: '', description: '', price: '', categoryName: '', isAvailable: true });
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   
@@ -48,6 +55,7 @@ const RestaurantDashboard = ({ onLogout }) => {
     fetchActiveOrders();
     fetchHistory();
     fetchStats();
+    fetchOffers();
     fetchProfileData();
     return () => {
       if (signalrConnection.current) signalrConnection.current.stop();
@@ -91,6 +99,83 @@ const RestaurantDashboard = ({ onLogout }) => {
       signalrConnection.current = connection;
     } catch (err) {
       console.error("SignalR Connection Error:", err);
+    }
+  };
+
+  const fetchOffers = async () => {
+    try {
+      const response = await fetch('http://localhost:5070/api/offer', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setOffers(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateOffer = async (e) => {
+    e.preventDefault();
+    if (!newOffer.code || !newOffer.discountAmount) {
+      alert("Code and Discount Amount are required.");
+      return;
+    }
+    try {
+      const isEdit = newOffer.id != null;
+      const url = isEdit ? `http://localhost:5070/api/offer/${newOffer.id}` : 'http://localhost:5070/api/offer';
+      const response = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: newOffer.code,
+          value: parseFloat(newOffer.discountAmount),
+          type: newOffer.isPercentage ? 0 : 1,
+          minOrderAmount: newOffer.minimumOrderValue ? parseFloat(newOffer.minimumOrderValue) : 0,
+          expiryDate: newOffer.expiresAt ? new Date(newOffer.expiresAt).toISOString() : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        }),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        setNewOffer({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' });
+        setShowOfferForm(false);
+        fetchOffers();
+        alert(isEdit ? "Offer updated successfully!" : "Offer created successfully!");
+      } else {
+        const errText = await response.text();
+        try {
+          const err = JSON.parse(errText);
+          alert(err.message || "Failed to save offer.");
+        } catch {
+          alert(errText || "Failed to save offer.");
+        }
+      }
+    } catch (err) {
+      alert("Error saving offer. Please check your connection.");
+    }
+  };
+
+  const toggleOfferStatus = async (offerId) => {
+    try {
+      const response = await fetch(`http://localhost:5070/api/offer/toggle/${offerId}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (response.ok) fetchOffers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const deleteOffer = async (offerId) => {
+    if (!confirm("Are you sure you want to delete this offer?")) return;
+    try {
+      const response = await fetch(`http://localhost:5070/api/offer/${offerId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (response.ok) fetchOffers();
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -213,7 +298,22 @@ const RestaurantDashboard = ({ onLogout }) => {
         credentials: 'include'
       });
       if (response.ok) {
+        if (profileImageFile) {
+          const formData = new FormData();
+          formData.append('file', profileImageFile);
+          try {
+            await fetch('http://localhost:5070/api/restaurant/profile/upload-image', {
+              method: 'POST',
+              body: formData,
+              credentials: 'include'
+            });
+          } catch (imgErr) {
+            console.error("Failed to upload profile image", imgErr);
+          }
+        }
         alert("Profile updated successfully!");
+        setProfileImageFile(null);
+        setProfilePreviewUrl(null);
         fetchProfileData();
       }
     } catch (err) {
@@ -255,7 +355,8 @@ const RestaurantDashboard = ({ onLogout }) => {
       name: newItem.name,
       description: newItem.description,
       price: parseFloat(newItem.price),
-      categoryName: newItem.categoryName
+      categoryName: newItem.categoryName,
+      isAvailable: newItem.isAvailable
     };
 
     try {
@@ -280,7 +381,7 @@ const RestaurantDashboard = ({ onLogout }) => {
           });
         }
 
-        setNewItem({ name: '', description: '', price: '', categoryName: '' });
+        setNewItem({ name: '', description: '', price: '', categoryName: '', isAvailable: true });
         setSelectedFile(null);
         setPreviewUrl(null);
         setEditingItem(null);
@@ -304,7 +405,7 @@ const RestaurantDashboard = ({ onLogout }) => {
       });
       if (response.ok) {
         const created = await response.json();
-        alert(`Category "${created.name}" created successfully!`);
+        alert(`Category "₹{created.name}" created successfully!`);
         // Refresh categories list
         const catRes = await fetch('http://localhost:5070/api/restaurant/categories', { credentials: 'include' });
         if (catRes.ok) {
@@ -327,13 +428,32 @@ const RestaurantDashboard = ({ onLogout }) => {
     }
   };
 
+  const handleDeleteCategory = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete the category "${name}"? Menu items under this category will no longer have it.`)) return;
+    try {
+      const res = await fetch(`http://localhost:5070/api/restaurant/categories/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        setCategories(prev => prev.filter(c => c.id !== id));
+      } else {
+        alert("Failed to delete category");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting category");
+    }
+  };
+
   const handleEditClick = (item) => {
     setEditingItem(item);
     setNewItem({
       name: item.name,
       description: item.description,
       price: item.price,
-      categoryName: item.categoryName
+      categoryName: item.categoryName,
+      isAvailable: item.isAvailable ?? true
     });
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -411,6 +531,11 @@ const RestaurantDashboard = ({ onLogout }) => {
         .sidebar-btn.active { background: rgba(239, 159, 39, 0.1); color: #ef9f27; }
         .tab-content { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Date picker calendar icon */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+        }
       `}</style>
 
       {/* Sidebar */}
@@ -425,6 +550,7 @@ const RestaurantDashboard = ({ onLogout }) => {
             { id: 'live', icon: '🔥', label: 'Live Orders', badge: orders.length },
             { id: 'menu', icon: '🍴', label: 'Menu Editor' },
             { id: 'history', icon: '📜', label: 'History' },
+            { id: 'offers', icon: '🏷️', label: 'Offers / Coupons' },
             { id: 'settings', icon: '⚙️', label: 'Settings' }
           ].map(item => (
             <button key={item.id} onClick={() => setActiveTab(item.id)} className={`sidebar-btn ${activeTab === item.id ? 'active' : ''}`}>
@@ -449,10 +575,10 @@ const RestaurantDashboard = ({ onLogout }) => {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '64px' }}>
               {[
-                { label: 'Today\'s Revenue', value: `$${(stats?.todayRevenue || 0).toFixed(2)}`, color: '#10b981' },
-                { label: 'Total Revenue', value: `$${(stats?.totalRevenue || 0).toFixed(2)}`, color: '#00f3ff' },
+                { label: 'Today\'s Revenue', value: `₹${(stats?.todayRevenue || 0).toFixed(2)}`, color: '#10b981' },
+                { label: 'Total Revenue', value: `₹${(stats?.totalRevenue || 0).toFixed(2)}`, color: '#00f3ff' },
                 { label: 'Active Orders', value: stats?.activeOrdersCount || 0, color: '#ef9f27' },
-                { label: 'Avg. Order Value', value: `$${(stats?.averageOrderValue || 0).toFixed(2)}`, color: '#3b82f6' }
+                { label: 'Avg. Order Value', value: `₹${(stats?.averageOrderValue || 0).toFixed(2)}`, color: '#3b82f6' }
               ].map((s, i) => (
                 <div key={i} className="glass" style={{ padding: '32px', borderRadius: '24px' }}>
                   <p style={{ color: '#666', fontSize: '0.9rem', fontWeight: '700', marginBottom: '12px' }}>{s.label.toUpperCase()}</p>
@@ -498,7 +624,7 @@ const RestaurantDashboard = ({ onLogout }) => {
                        {order.items.map((item, i) => (
                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                            <span>{item.quantity}x {item.dishName}</span>
-                           <span style={{ color: '#666' }}>${(item.quantity * item.unitPrice).toFixed(2)}</span>
+                           <span style={{ color: '#666' }}>₹{(item.quantity * item.unitPrice).toFixed(2)}</span>
                          </div>
                        ))}
                      </div>
@@ -561,7 +687,7 @@ const RestaurantDashboard = ({ onLogout }) => {
                             <td style={{ padding: '24px', fontWeight: '800', fontFamily: 'monospace', color: '#ef9f27', fontSize: '1rem' }}>#{o.id.substring(0, 8)}</td>
                             <td style={{ padding: '24px', color: '#aaa', fontSize: '0.95rem' }}>{new Date(o.createdAt).toLocaleDateString()}</td>
                             <td style={{ padding: '24px', fontWeight: '700', color: '#fff' }}>{o.customerName}</td>
-                            <td style={{ padding: '24px', fontWeight: '900', color: '#10b981', fontSize: '1.1rem' }}>${o.totalAmount.toFixed(2)}</td>
+                            <td style={{ padding: '24px', fontWeight: '900', color: '#10b981', fontSize: '1.1rem' }}>₹{o.totalAmount.toFixed(2)}</td>
                             <td style={{ padding: '24px' }}>
                               <span style={{ padding: '6px 12px', borderRadius: '20px', background: o.status === 'Cancelled' ? 'rgba(255, 77, 77, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: o.status === 'Cancelled' ? '#ff4d4d' : '#10b981', fontWeight: '700', fontSize: '0.8rem' }}>
                                 {o.status.toUpperCase()}
@@ -580,10 +706,27 @@ const RestaurantDashboard = ({ onLogout }) => {
 
         {activeTab === 'menu' && (
           <div className="tab-content">
-             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <h2 style={{ fontSize: '2.5rem', fontWeight: '800' }}>Menu Editor</h2>
-                <button onClick={() => { setEditingItem({}); setNewItem({ name: '', description: '', price: '', categoryName: '' }); setSelectedFile(null); setPreviewUrl(null); }} style={{ padding: '16px 32px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>+ Add Item</button>
+                <button onClick={() => { setEditingItem({}); setNewItem({ name: '', description: '', price: '', categoryName: '', isAvailable: true }); setSelectedFile(null); setPreviewUrl(null); }} style={{ padding: '16px 32px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>+ Add Item</button>
              </div>
+             
+             {/* Categories Filter/Management Row */}
+             {categories && categories.length > 0 && (
+               <div style={{ marginBottom: '40px' }}>
+                 <p style={{ color: '#888', fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>Your Custom Categories</p>
+                 <div className="no-scrollbar" style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '10px' }}>
+                   {categories.map(cat => (
+                     <div key={cat.id} style={{ display: 'flex', alignItems: 'center', background: 'rgba(239, 159, 39, 0.1)', border: '1px solid rgba(239, 159, 39, 0.3)', borderRadius: '20px', padding: '8px 16px', gap: '10px' }}>
+                       <span style={{ color: '#ef9f27', fontWeight: '700', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>{cat.name}</span>
+                       <button onClick={() => handleDeleteCategory(cat.id, cat.name)} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '50%', fontSize: '1rem', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'} title="Delete Category">
+                         ×
+                       </button>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             )}
              
              {loading ? <p>Loading menu...</p> : (
                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '32px' }}>
@@ -597,7 +740,7 @@ const RestaurantDashboard = ({ onLogout }) => {
                          <h4 style={{ fontSize: '1.2rem', fontWeight: '800', marginTop: '4px' }}>{item.name}</h4>
                          <p style={{ color: '#666', fontSize: '0.9rem', marginTop: '8px' }}>{item.description}</p>
                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px' }}>
-                            <span style={{ fontSize: '1.2rem', fontWeight: '800' }}>${item.price.toFixed(2)}</span>
+                            <span style={{ fontSize: '1.2rem', fontWeight: '800' }}>₹{item.price.toFixed(2)}</span>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                <button onClick={() => handleEditClick(item)} style={{ padding: '8px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer' }}>Edit</button>
                                <button onClick={() => handleDeleteItem(item.id)} style={{ padding: '8px 16px', borderRadius: '10px', background: 'rgba(255,0,0,0.1)', color: '#ff4d4d', border: 'none', cursor: 'pointer' }}>Delete</button>
@@ -623,6 +766,48 @@ const RestaurantDashboard = ({ onLogout }) => {
                    <div>
                       <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Description</label>
                       <textarea value={profile.description} onChange={e => setProfile({...profile, description: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff', minHeight: '100px' }} />
+                   </div>
+                   
+                   <div>
+                     <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Restaurant Display Image</label>
+                     
+                     {(profilePreviewUrl || profile.imageUrl) && (
+                       <div style={{ marginBottom: '16px', width: '100%', height: '220px', borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', position: 'relative', background: '#000' }}>
+                         <img 
+                           src={profilePreviewUrl || `http://localhost:5070${profile.imageUrl}`} 
+                           style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                           alt="Restaurant Preview" 
+                         />
+                       </div>
+                     )}
+                     
+                     <div style={{ position: 'relative' }}>
+                       <input 
+                         type="file" 
+                         id="profileImageInput"
+                         accept="image/*"
+                         onChange={e => {
+                           const file = e.target.files[0];
+                           if (file && !file.type.startsWith('image/')) {
+                             alert("Please select a valid image file.");
+                             e.target.value = null;
+                             setProfileImageFile(null);
+                             setProfilePreviewUrl(null);
+                             return;
+                           }
+                           setProfileImageFile(file);
+                           if (file) {
+                             setProfilePreviewUrl(URL.createObjectURL(file));
+                           } else {
+                             setProfilePreviewUrl(null);
+                           }
+                         }} 
+                         style={{ display: 'none' }}
+                       />
+                       <label htmlFor="profileImageInput" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.2)', color: '#fff', fontSize: '0.95rem', cursor: 'pointer', transition: 'background 0.2s' }}>
+                         <span>📸</span> {profileImageFile ? 'Change Selected Image' : 'Upload Display Image'}
+                       </label>
+                     </div>
                    </div>
                    <div>
                       <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Location (Click on map to update)</label>
@@ -653,82 +838,275 @@ const RestaurantDashboard = ({ onLogout }) => {
              </div>
           </div>
         )}
+        {activeTab === 'offers' && (
+          <div className="tab-content">
+            <h2 style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fff', marginBottom: '8px' }}>Offers & Coupons</h2>
+            <p style={{ color: '#aaa', marginBottom: '40px' }}>Manage store-specific promo codes.</p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              {showOfferForm ? (
+                <div className="glass" style={{ padding: '32px', borderRadius: '24px', maxWidth: '800px', width: '100%' }}>
+                  <h3 style={{ fontSize: '1.4rem', color: '#00f3ff', marginBottom: '24px', fontWeight: '800' }}>{newOffer.id ? 'Edit Offer' : 'Create New Offer'}</h3>
+                  <form onSubmit={handleCreateOffer}>
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Coupon Code</label>
+                      <input 
+                        type="text" 
+                        value={newOffer.code}
+                        onChange={e => setNewOffer({...newOffer, code: e.target.value.toUpperCase()})}
+                        placeholder="e.g. SUMMER20"
+                        style={{ width: '100%', padding: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '16px', textTransform: 'uppercase', fontSize: '1rem' }}
+                      />
+                    </div>
+                    
+                    <div style={{ marginBottom: '20px', display: 'flex', gap: '20px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Discount Amount</label>
+                        <input 
+                          type="number" 
+                          value={newOffer.discountAmount}
+                          onChange={e => {
+                            let val = e.target.value;
+                            if (newOffer.isPercentage && Number(val) > 100) val = '100';
+                            if (!newOffer.isPercentage && Number(val) > 500) val = '500';
+                            setNewOffer({...newOffer, discountAmount: val})
+                          }}
+                          placeholder={newOffer.isPercentage ? "%" : "₹"}
+                          style={{ width: '100%', padding: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '16px', fontSize: '1rem' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', marginTop: '30px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', color: '#aaa', fontSize: '0.95rem', fontWeight: '600' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={newOffer.isPercentage}
+                            onChange={e => setNewOffer({
+                              ...newOffer, 
+                              isPercentage: e.target.checked,
+                              discountAmount: (e.target.checked && Number(newOffer.discountAmount) > 100) ? '100' : 
+                                              (!e.target.checked && Number(newOffer.discountAmount) > 500) ? '500' : newOffer.discountAmount
+                            })}
+                            style={{ marginRight: '12px', transform: 'scale(1.2)' }}
+                          />
+                          Is Percentage?
+                        </label>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Min Order Value (Optional)</label>
+                      <input 
+                        type="number" 
+                        value={newOffer.minimumOrderValue}
+                        onChange={e => setNewOffer({...newOffer, minimumOrderValue: e.target.value})}
+                        placeholder="₹0.00"
+                        style={{ width: '100%', padding: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '16px', fontSize: '1rem' }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: '32px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Expires At (Optional)</label>
+                      <input 
+                        type="date" 
+                        value={newOffer.expiresAt}
+                        onChange={e => setNewOffer({...newOffer, expiresAt: e.target.value})}
+                        style={{ width: '100%', padding: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '16px', fontSize: '1rem', colorScheme: 'dark' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '16px' }}>
+                      <button type="submit" style={{ flex: 1, padding: '18px', borderRadius: '16px', background: 'rgba(0,243,255,0.15)', color: '#00f3ff', border: '1px solid rgba(0, 243, 255, 0.4)', fontWeight: '800', cursor: 'pointer', transition: 'all 0.3s' }}>
+                        {newOffer.id ? 'SAVE CHANGES' : '+ CREATE OFFER'}
+                      </button>
+                      <button type="button" onClick={() => { setShowOfferForm(false); setNewOffer({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' }); }} style={{ flex: 1, padding: '18px', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', fontWeight: '800', cursor: 'pointer', transition: 'all 0.3s' }}>
+                        CANCEL
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '1.4rem', color: '#fff', margin: 0, fontWeight: '800' }}>Active Offers</h3>
+                    <button 
+                      onClick={() => { setNewOffer({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' }); setShowOfferForm(true); }}
+                      style={{ padding: '12px 24px', borderRadius: '12px', background: '#00f3ff', color: '#000', fontWeight: '800', border: 'none', cursor: 'pointer', fontSize: '0.95rem' }}>
+                      + Add New Offer
+                    </button>
+                  </div>
+                {offers.length === 0 ? (
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '40px', borderRadius: '24px', textAlign: 'center', color: '#666', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                    No offers created yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {offers.map(offer => (
+                      <div key={offer.id} className="glass" style={{ padding: '24px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: `1px solid ${offer.isActive ? 'rgba(0,243,255,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
+                        <div>
+                          <h4 style={{ color: '#fff', fontSize: '1.4rem', margin: '0 0 8px 0', letterSpacing: '1px', fontWeight: '900' }}>{offer.code}</h4>
+                          <p style={{ color: '#aaa', margin: '0 0 6px 0', fontSize: '1rem' }}>
+                            Discount: <span style={{ color: '#00f3ff', fontWeight: '800' }}>{offer.type === 0 ? `${offer.value}%` : `₹${offer.value}`}</span>
+                          </p>
+                          {offer.minOrderAmount > 0 && (
+                            <p style={{ color: '#888', margin: 0, fontSize: '0.85rem', fontWeight: '600' }}>Min Order: ₹{offer.minOrderAmount}</p>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <button 
+                            onClick={() => { setNewOffer({ id: offer.id, code: offer.code, discountAmount: offer.value, isPercentage: offer.type === 0, minimumOrderValue: offer.minOrderAmount || '', expiresAt: offer.expiryDate ? offer.expiryDate.split('T')[0] : '' }); setShowOfferForm(true); }}
+                            style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: '700' }}
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            onClick={() => toggleOfferStatus(offer.id)}
+                            style={{ background: offer.isActive ? 'rgba(0,243,255,0.15)' : 'rgba(255,255,255,0.05)', color: offer.isActive ? '#00f3ff' : '#aaa', border: offer.isActive ? '1px solid rgba(0,243,255,0.3)' : '1px solid rgba(255,255,255,0.1)', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: '700' }}
+                          >
+                            {offer.isActive ? 'Active' : 'Inactive'}
+                          </button>
+                          <button 
+                            onClick={() => deleteOffer(offer.id)}
+                            style={{ background: 'rgba(255,77,77,0.1)', color: '#ff4d4d', border: '1px solid rgba(255,77,77,0.3)', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: '700' }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Add/Edit Item Modal */}
       {editingItem && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-           <div className="glass" style={{ width: '100%', maxWidth: '500px', padding: '40px', borderRadius: '32px', position: 'relative' }}>
-              <button onClick={() => setEditingItem(null)} style={{ position: 'absolute', top: '24px', right: '24px', background: 'none', border: 'none', color: '#666', fontSize: '2rem', cursor: 'pointer' }}>×</button>
-              <h3 style={{ fontSize: '1.5rem', fontWeight: '800', marginBottom: '32px' }}>{editingItem.id ? 'Edit Menu Item' : 'Add Menu Item'}</h3>
-              <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                 <input placeholder="Item Name" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                 <textarea placeholder="Description" value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                 <input placeholder="Price ($)" type="number" step="0.01" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} style={{ padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
+           <div className="glass card" style={{ width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto', padding: '40px', borderRadius: '32px', position: 'relative', border: '1px solid rgba(239, 159, 39, 0.3)' }}>
+              <button onClick={() => setEditingItem(null)} style={{ position: 'absolute', top: '24px', right: '24px', background: 'none', border: 'none', color: '#888', fontSize: '1.8rem', cursor: 'pointer', transition: 'color 0.2s' }}>✕</button>
+              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '32px', color: '#fff' }}>{editingItem.id ? 'Edit Menu Item' : 'Add Menu Item'}</h3>
+              
+              <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                  <div>
-                    <input placeholder="Category" value={newItem.categoryName} onChange={e => setNewItem({...newItem, categoryName: e.target.value})} list="existing-categories" style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                    <datalist id="existing-categories">
-                      {Array.from(new Set([
-                        ...categories.map(c => c.name),
-                        "Pizza", "Burger", "Sushi", "Healthy", "Dessert", "Coffee", "Salad", "Beverages", "Chicken", "Pasta"
-                      ])).map((catName, idx) => (
-                        <option key={idx} value={catName} />
-                      ))}
-                    </datalist>
-                    
-                    <div style={{ marginTop: '8px', textAlign: 'right' }}>
-                      <button type="button" onClick={() => { setShowNewCategoryInput(!showNewCategoryInput); setCustomCategoryName(''); }} style={{ background: 'none', border: 'none', color: '#ef9f27', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}>
-                        {showNewCategoryInput ? 'Cancel' : '+ Category not available? Add new'}
-                      </button>
-                    </div>
-
-                    {showNewCategoryInput && (
-                      <div className="glass" style={{ marginTop: '12px', padding: '16px', borderRadius: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <input 
-                          placeholder="New Category Name" 
-                          value={customCategoryName} 
-                          onChange={e => setCustomCategoryName(e.target.value)} 
-                          style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '0.9rem' }} 
-                        />
-                        <button type="button" onClick={handleAddCategory} disabled={isAddingCategory} style={{ padding: '10px 16px', borderRadius: '10px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer', fontSize: '0.85rem' }}>
-                          {isAddingCategory ? '...' : 'Add'}
+                   <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Dish Name</label>
+                   <input placeholder="e.g. Spicy Chicken Burger" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '1rem' }} />
+                 </div>
+                 
+                 <div>
+                   <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Description</label>
+                   <textarea placeholder="Briefly describe the dish, ingredients, and flavor profile..." value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', minHeight: '100px', resize: 'vertical', fontSize: '1rem' }} />
+                 </div>
+                 
+                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                   <div>
+                     <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Price ($)</label>
+                     <input placeholder="0.00" type="number" step="0.01" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '1rem' }} />
+                   </div>
+                   
+                   <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Category</label>
+                      <select 
+                        value={newItem.categoryName} 
+                        onChange={e => setNewItem({...newItem, categoryName: e.target.value})} 
+                        style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: newItem.categoryName ? '#fff' : '#888', fontSize: '1rem', appearance: 'none', cursor: 'pointer' }}
+                      >
+                        <option value="" disabled>Select a category</option>
+                        {Array.from(new Set([
+                          ...categories.map(c => c.name),
+                          "Pizza", "Burger", "Sushi", "Healthy", "Dessert", "Coffee", "Salad", "Beverages", "Chicken", "Pasta", "Indian", "Chinese"
+                        ])).sort().map((catName, idx) => (
+                          <option key={idx} value={catName} style={{ background: '#111', color: '#fff' }}>{catName}</option>
+                        ))}
+                      </select>
+                      
+                      <div style={{ marginTop: '8px', textAlign: 'right' }}>
+                        <button type="button" onClick={() => { setShowNewCategoryInput(!showNewCategoryInput); setCustomCategoryName(''); }} style={{ background: 'none', border: 'none', color: '#ef9f27', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                          {showNewCategoryInput ? 'Cancel' : '+ Add custom category'}
                         </button>
                       </div>
-                    )}
-                  </div>
-                 {(previewUrl || (editingItem && editingItem.imageUrl)) && (
-                   <div style={{ marginBottom: '15px' }}>
-                     <label style={{ display: 'block', color: '#666', fontSize: '0.85rem', marginBottom: '8px' }}>Current / Selected Image</label>
-                     <div style={{ width: '100%', height: '160px', borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', position: 'relative' }}>
+                   </div>
+
+                   <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#fff', fontSize: '0.95rem', fontWeight: '600' }}>Item is currently available</span>
+                      <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer', margin: 0 }}>
+                        <input 
+                          type="checkbox" 
+                          checked={newItem.isAvailable}
+                          onChange={e => setNewItem({...newItem, isAvailable: e.target.checked})}
+                          style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                        />
+                        <span style={{
+                          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                          backgroundColor: newItem.isAvailable ? '#00f3ff' : 'rgba(255,255,255,0.1)',
+                          transition: '.4s', borderRadius: '34px', boxShadow: newItem.isAvailable ? '0 0 10px rgba(0,243,255,0.5)' : 'none'
+                        }}></span>
+                        <span style={{
+                          position: 'absolute', height: '18px', width: '18px', left: '4px', bottom: '4px',
+                          backgroundColor: newItem.isAvailable ? '#000' : '#888', transition: '.4s', borderRadius: '50%',
+                          transform: newItem.isAvailable ? 'translateX(24px)' : 'translateX(0)'
+                        }}></span>
+                      </label>
+                   </div>
+                 </div>
+
+                 {showNewCategoryInput && (
+                   <div style={{ padding: '16px', borderRadius: '16px', background: 'rgba(239, 159, 39, 0.05)', border: '1px solid rgba(239, 159, 39, 0.2)', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                     <input 
+                       placeholder="e.g. Seafood, Vegan, Mexican" 
+                       value={customCategoryName} 
+                       onChange={e => setCustomCategoryName(e.target.value)} 
+                       style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '0.95rem' }} 
+                     />
+                     <button type="button" onClick={handleAddCategory} disabled={isAddingCategory} style={{ padding: '12px 20px', borderRadius: '12px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                       {isAddingCategory ? 'Adding...' : 'Add Category'}
+                     </button>
+                   </div>
+                 )}
+
+                 <div>
+                   <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Dish Image</label>
+                   
+                   {(previewUrl || (editingItem && editingItem.imageUrl)) && (
+                     <div style={{ marginBottom: '16px', width: '100%', height: '220px', borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', position: 'relative', background: '#000' }}>
                        <img 
                          src={previewUrl || `http://localhost:5070${editingItem.imageUrl}`} 
                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                          alt="Dish Preview" 
                        />
                      </div>
+                   )}
+                   
+                   <div style={{ position: 'relative' }}>
+                     <input 
+                       type="file" 
+                       id="dishImageInput"
+                       accept="image/*"
+                       onChange={e => {
+                         const file = e.target.files[0];
+                         if (file && !file.type.startsWith('image/')) {
+                           alert("Please select a valid image file.");
+                           e.target.value = null;
+                           setSelectedFile(null);
+                           setPreviewUrl(null);
+                           return;
+                         }
+                         setSelectedFile(file);
+                         if (file) {
+                           setPreviewUrl(URL.createObjectURL(file));
+                         } else {
+                           setPreviewUrl(null);
+                         }
+                       }} 
+                       style={{ display: 'none' }}
+                     />
+                     <label htmlFor="dishImageInput" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.2)', color: '#fff', fontSize: '0.95rem', cursor: 'pointer', transition: 'background 0.2s' }}>
+                       <span>📸</span> {selectedFile ? 'Change Selected Image' : 'Upload Image File'}
+                     </label>
                    </div>
-                 )}
-                 <input 
-                   type="file" 
-                   accept="image/*"
-                   onChange={e => {
-                     const file = e.target.files[0];
-                     if (file && !file.type.startsWith('image/')) {
-                       alert("Please select a valid image file.");
-                       e.target.value = null;
-                       setSelectedFile(null);
-                       setPreviewUrl(null);
-                       return;
-                     }
-                     setSelectedFile(file);
-                     if (file) {
-                       setPreviewUrl(URL.createObjectURL(file));
-                     } else {
-                       setPreviewUrl(null);
-                     }
-                   }} 
-                   style={{ color: '#888', fontSize: '0.9rem' }} 
-                 />
+                 </div>
                  <button type="submit" style={{ padding: '18px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>{editingItem.id ? 'Save Changes' : 'Create Item'}</button>
               </form>
            </div>

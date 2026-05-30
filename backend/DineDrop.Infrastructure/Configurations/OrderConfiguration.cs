@@ -37,6 +37,11 @@ namespace DineDrop.Infrastructure.Configurations
                 .WithMany()
                 .HasForeignKey(x => x.DriverId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            builder.HasOne(x => x.Offer)
+                .WithMany()
+                .HasForeignKey(x => x.OfferId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

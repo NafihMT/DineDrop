@@ -31,7 +31,9 @@ namespace DineDrop.Infrastructure.Services
                         IsOpen = r.IsOpen,
                         Rating = r.Rating,
                         Latitude = r.Latitude,
-                        Longitude = r.Longitude
+                        Longitude = r.Longitude,
+                        ImageUrl = r.ImageUrl,
+                        DishCount = _context.MenuItems.Count(m => m.RestaurantId == r.Id && !m.IsDeleted && m.IsAvailable)
                     }).ToListAsync();
 
         }
@@ -41,7 +43,7 @@ namespace DineDrop.Infrastructure.Services
             return await _context.MenuItems
                 .Include(m => m.Category)
                 .Include(m => m.Restaurant)
-                .Where(m => !m.IsDeleted && m.IsAvailable)
+                .Where(m => !m.IsDeleted)
                 .Select(m => new MenuItemDto
                 {
                     Id = m.Id,
@@ -54,7 +56,8 @@ namespace DineDrop.Infrastructure.Services
                     RestaurantName = m.Restaurant.Name,
                     RestaurantLatitude = m.Restaurant.Latitude,
                     RestaurantLongitude = m.Restaurant.Longitude,
-                    RestaurantIsOpen = m.Restaurant.IsOpen
+                    RestaurantIsOpen = m.Restaurant.IsOpen,
+                    IsAvailable = m.IsAvailable
                 }).ToListAsync();
         }
 
@@ -70,7 +73,8 @@ namespace DineDrop.Infrastructure.Services
                     Description = m.Description,
                     Price = m.Price,
                     ImageUrl = m.ImageUrl,
-                    CategoryName = m.Category != null ? m.Category.Name : "General"
+                    CategoryName = m.Category != null ? m.Category.Name : "General",
+                    IsAvailable = m.IsAvailable
                 }).ToListAsync();
         }
         public async Task<UserProfileDto?> GetUserProfileAsync(Guid userId)
@@ -99,7 +103,7 @@ namespace DineDrop.Infrastructure.Services
                 DateOfBirth = user.DateOfBirth,
                 Gender = user.Gender,
                 WalletBalance = wallet.Balance,
-                Addresses = user.Addresses.Select(a => new UserAddressDto
+                Addresses = user.Addresses.OrderByDescending(a => a.CreatedAt).Select(a => new UserAddressDto
                 {
                     Id = a.Id,
                     AddressLine = a.AddressLine ?? string.Empty,
@@ -129,6 +133,12 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task<UserAddressDto> AddUserAddressAsync(Guid userId, AddUserAddressDto dto)
         {
+            if (dto.IsDefault)
+            {
+                var existingDefaults = await _context.UserAddresses.Where(a => a.UserId == userId && a.IsDefault).ToListAsync();
+                foreach (var d in existingDefaults) d.IsDefault = false;
+            }
+
             var address = new Domain.Entities.UserAddress
             {
                 UserId = userId,

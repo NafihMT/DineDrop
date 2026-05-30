@@ -626,7 +626,7 @@ const DriverDashboard = ({ onLogout }) => {
               {[
                 { label: 'Ready to Pick', value: totalOrders, color: 'var(--dd-amber)' },
                 { label: 'Restaurants', value: restaurantGroups.length, color: 'var(--dd-blue)' },
-                { label: 'Est. Earnings', value: `$${totalFee.toFixed(2)}`, color: 'var(--dd-green)' },
+                { label: 'Est. Earnings', value: `₹${totalFee.toFixed(2)}`, color: 'var(--dd-green)' },
                 driverPos ? { label: 'Nearest', value: groupsWithDistance[0] ? fmtDist(groupsWithDistance[0].distance) : '—', color: 'var(--dd-amber)' } : null,
               ].filter(Boolean).map(s => (
                 <div key={s.label} className="dd-stat-card">
@@ -736,7 +736,7 @@ const DriverDashboard = ({ onLogout }) => {
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                   <div style={{ textAlign: 'right' }}>
-                                    <p style={{ fontWeight: '900', fontSize: '1rem', color: '#2ecc71' }}>${order.totalAmount.toFixed(2)}</p>
+                                    <p style={{ fontWeight: '900', fontSize: '1rem', color: '#2ecc71' }}>₹{order.totalAmount.toFixed(2)}</p>
                                     <p style={{ color: '#555', fontSize: '0.74rem' }}>+${order.deliveryFee.toFixed(2)} fee</p>
                                   </div>
                                   <span style={{ color: '#333', transform: expandedOrder === order.id ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.2s' }}>▾</span>
@@ -753,7 +753,7 @@ const DriverDashboard = ({ onLogout }) => {
                                           <span style={{ width: '22px', height: '22px', background: 'rgba(243,156,18,0.12)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '0.7rem', color: '#f39c12' }}>{item.quantity}x</span>
                                           <span style={{ fontWeight: '600', color: '#ccc', fontSize: '0.88rem' }}>{item.dishName}</span>
                                         </div>
-                                        <span style={{ color: '#777', fontWeight: '700', fontSize: '0.88rem' }}>${(item.unitPrice * item.quantity).toFixed(2)}</span>
+                                        <span style={{ color: '#777', fontWeight: '700', fontSize: '0.88rem' }}>₹{(item.unitPrice * item.quantity).toFixed(2)}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -764,7 +764,7 @@ const DriverDashboard = ({ onLogout }) => {
                                     </div>
                                     <div style={{ padding: '10px', background: 'rgba(46,204,113,0.06)', borderRadius: '9px', textAlign: 'center', border: '1px solid rgba(46,204,113,0.1)' }}>
                                       <p style={{ fontSize: '0.65rem', color: '#444', fontWeight: '700', marginBottom: '4px' }}>DELIVERY FEE</p>
-                                      <p style={{ fontWeight: '900', color: '#2ecc71', fontSize: '1rem' }}>${order.deliveryFee.toFixed(2)}</p>
+                                      <p style={{ fontWeight: '900', color: '#2ecc71', fontSize: '1rem' }}>₹{order.deliveryFee.toFixed(2)}</p>
                                     </div>
                                     {group.distance !== null && (
                                       <div style={{ padding: '10px', background: 'rgba(243,156,18,0.06)', borderRadius: '9px', textAlign: 'center', border: '1px solid rgba(243,156,18,0.1)' }}>
@@ -842,7 +842,7 @@ const DriverDashboard = ({ onLogout }) => {
                         </p>
                       </div>
                         <div style={{ textAlign: 'right' }}>
-                          <p style={{ fontSize: '1.3rem', fontWeight: '900', color: 'var(--dd-green)' }}>${order.totalAmount.toFixed(2)}</p>
+                          <p style={{ fontSize: '1.3rem', fontWeight: '900', color: 'var(--dd-green)' }}>₹{order.totalAmount.toFixed(2)}</p>
                           <p style={{ color: '#666', fontSize: '0.78rem', fontWeight: '700' }}>Earnings: +${order.deliveryFee.toFixed(2)}</p>
                         </div>
                     </div>
@@ -883,13 +883,25 @@ const DriverDashboard = ({ onLogout }) => {
                             <span style={{ fontWeight: '700', color: '#fff' }}>
                               <span style={{ color: '#f39c12', marginRight: '6px' }}>{item.quantity}x</span> {item.dishName}
                             </span>
-                            <span style={{ color: '#aaa' }}>${(item.unitPrice * item.quantity).toFixed(2)}</span>
+                            <span style={{ color: '#aaa' }}>₹{(item.unitPrice * item.quantity).toFixed(2)}</span>
                           </div>
                         ))}
                       </div>
                     </div>
-
-                    {/* Dynamic Active Order Action Button */}
+                    {/* Live Tracking Map */}
+                    {order.restaurantLatitude && order.restaurantLongitude && order.customerLatitude && order.customerLongitude && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <OrderTrackingMap 
+                          driverLat={driverPos?.lat || 11.1202} 
+                          driverLng={driverPos?.lng || 76.1200}
+                          restLat={order.restaurantLatitude} 
+                          restLng={order.restaurantLongitude}
+                          custLat={order.customerLatitude} 
+                          custLng={order.customerLongitude}
+                          status={order.status}
+                        />
+                      </div>
+                    )}
                     {orderStatus === 'Accepted' || orderStatus === 'Preparing' ? (
                       <button disabled className="dd-btn dd-btn-disabled-look">
                         ⏳ Waiting for Restaurant (Preparing)
@@ -990,8 +1002,7 @@ const DriverDashboard = ({ onLogout }) => {
                   💳
                 </div>
                 <p style={{ fontSize: '0.8rem', color: '#666', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', margin: '0 0 6px 0' }}>Wallet Balance</p>
-                <h3 style={{ fontSize: '2rem', fontWeight: '900', color: '#2ecc71', margin: 0 }}>
-                  ${stats?.walletBalance !== undefined ? stats.walletBalance.toFixed(2) : '0.00'}
+                <h3 style={{ fontSize: '2rem', fontWeight: '900', color: '#2ecc71', margin: 0 }}>₹{stats?.walletBalance !== undefined ? stats.walletBalance.toFixed(2) : '0.00'}
                 </h3>
                 <span style={{ fontSize: '0.72rem', color: '#444', display: 'block', marginTop: '6px' }}>Available for instant payout</span>
               </div>
@@ -1002,8 +1013,7 @@ const DriverDashboard = ({ onLogout }) => {
                   💰
                 </div>
                 <p style={{ fontSize: '0.8rem', color: '#666', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', margin: '0 0 6px 0' }}>Total Earnings</p>
-                <h3 style={{ fontSize: '2rem', fontWeight: '900', color: '#f39c12', margin: 0 }}>
-                  ${stats?.totalEarnings !== undefined ? stats.totalEarnings.toFixed(2) : '0.00'}
+                <h3 style={{ fontSize: '2rem', fontWeight: '900', color: '#f39c12', margin: 0 }}>₹{stats?.totalEarnings !== undefined ? stats.totalEarnings.toFixed(2) : '0.00'}
                 </h3>
                 <span style={{ fontSize: '0.72rem', color: '#444', display: 'block', marginTop: '6px' }}>Cumulative delivery income</span>
               </div>
@@ -1080,15 +1090,32 @@ const DriverDashboard = ({ onLogout }) => {
                           <span style={{ color: '#555', fontSize: '0.72rem', display: 'block', marginTop: '4px' }}>
                             Delivered at: {new Date(item.deliveredAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                           </span>
+                          {item.driverRating ? (
+                            <div style={{ marginTop: '8px', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '10px', display: 'inline-block', border: '1px solid rgba(255,255,255,0.03)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ color: '#f1c40f', fontWeight: '900', fontSize: '0.8rem', letterSpacing: '1px' }}>
+                                  {'★'.repeat(item.driverRating)}{'☆'.repeat(5 - item.driverRating)}
+                                </span>
+                                <span style={{ color: '#666', fontSize: '0.72rem' }}>Customer Review</span>
+                              </div>
+                              {item.driverFeedback && (
+                                <p style={{ color: '#aaa', fontSize: '0.78rem', margin: '4px 0 0 0', fontStyle: 'italic', maxWidth: '400px', whiteSpace: 'normal', lineHeight: '1.3' }}>
+                                  "{item.driverFeedback}"
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ color: '#444', fontSize: '0.72rem', display: 'block', marginTop: '6px' }}>No customer feedback yet</span>
+                          )}
                         </div>
                       </div>
 
                       <div style={{ textAlign: 'right' }}>
                         <span style={{ padding: '6px 12px', borderRadius: '12px', background: 'rgba(46,204,113,0.12)', color: '#2ecc71', fontWeight: '950', fontSize: '0.85rem' }}>
-                          +${item.earnings.toFixed(2)}
+                          +₹{item.earnings.toFixed(2)}
                         </span>
                         <span style={{ display: 'block', fontSize: '0.7rem', color: '#444', marginTop: '6px' }}>
-                          Fee: ${item.earnings.toFixed(2)}
+                          Fee: ₹{item.earnings.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1135,7 +1162,7 @@ const DriverDashboard = ({ onLogout }) => {
           </h3>
           
           <p style={{ color: '#aaa', fontSize: '0.85rem', lineHeight: '1.4', marginBottom: '16px' }}>
-            A new delivery request is ready for pickup! Accept now to secure the <span style={{ color: '#2ecc71', fontWeight: '800' }}>${newOrderNotification.deliveryFee ? newOrderNotification.deliveryFee.toFixed(2) : '5.00'}</span> fee.
+            A new delivery request is ready for pickup! Accept now to secure the <span style={{ color: '#2ecc71', fontWeight: '800' }}>₹{newOrderNotification.deliveryFee ? newOrderNotification.deliveryFee.toFixed(2) : '5.00'}</span> fee.
           </p>
           
           <div style={{ display: 'flex', gap: '10px' }}>

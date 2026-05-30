@@ -41,7 +41,8 @@ namespace DineDrop.Infrastructure.Services
                 BusinessType = profile.BusinessType,
                 BusinessHours = profile.BusinessHours,
                 Latitude = restaurant.Latitude,
-                Longitude = restaurant.Longitude
+                Longitude = restaurant.Longitude,
+                ImageUrl = restaurant.ImageUrl
             };
         }
 
@@ -62,6 +63,7 @@ namespace DineDrop.Infrastructure.Services
             restaurant.IsOpen = dto.IsOpen;
             restaurant.Latitude = dto.Latitude;
             restaurant.Longitude = dto.Longitude;
+            restaurant.ImageUrl = dto.ImageUrl;
 
             // Update RestaurantProfile Entity
             profile.Address = dto.Address;

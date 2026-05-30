@@ -40,6 +40,8 @@ namespace DineDrop.Infrastructure.Services
                     CustomerName = o.User.Name,
                     TotalAmount = o.TotalAmount,
                     DeliveryFee = o.DeliveryFee,
+                    DiscountAmount = o.DiscountAmount,
+                    CouponCode = o.Offer != null ? o.Offer.Code : null,
                     Status = o.Status,
                     CreatedAt = o.CreatedAt,
                     Items = o.OrderItems.Select(oi => new RestaurantOrderItemDto
@@ -53,25 +55,60 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task<List<RestaurantOrderDto>> GetOrderHistoryAsync(Guid userId)
         {
-            return await _context.Orders
-                .Where(o => o.Restaurant.OwnerId == userId && 
+            var restaurant = await _context.Restaurants.FirstOrDefaultAsync(r => r.OwnerId == userId);
+            if (restaurant == null) return new List<RestaurantOrderDto>();
+
+            var orders = await _context.Orders
+                .Where(o => o.RestaurantId == restaurant.Id && 
                            (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.Cancelled))
                 .OrderByDescending(o => o.CreatedAt)
-                .Select(o => new RestaurantOrderDto
+                .Include(o => o.User)
+                .Include(o => o.Offer)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.MenuItem)
+                .ToListAsync();
+
+            // Fetch all restaurant ratings
+            var ratings = await _context.Ratings
+                .Where(r => r.RestaurantId == restaurant.Id)
+                .OrderBy(r => r.CreatedAt)
+                .ToListAsync();
+
+            var result = new List<RestaurantOrderDto>();
+
+            foreach (var o in orders)
+            {
+                Rating? matchingRating = null;
+                if (o.IsRated)
+                {
+                    matchingRating = ratings
+                        .Where(r => r.UserId == o.UserId && r.CreatedAt >= o.CreatedAt)
+                        .OrderBy(r => r.CreatedAt)
+                        .FirstOrDefault();
+                }
+
+                result.Add(new RestaurantOrderDto
                 {
                     Id = o.Id,
                     CustomerName = o.User.Name,
                     TotalAmount = o.TotalAmount,
                     DeliveryFee = o.DeliveryFee,
+                    DiscountAmount = o.DiscountAmount,
+                    CouponCode = o.Offer != null ? o.Offer.Code : null,
                     Status = o.Status,
                     CreatedAt = o.CreatedAt,
+                    RestaurantRating = matchingRating?.Value,
+                    RestaurantFeedback = matchingRating?.Comment,
                     Items = o.OrderItems.Select(oi => new RestaurantOrderItemDto
                     {
                         DishName = oi.MenuItem.Name,
                         Quantity = oi.Quantity,
                         UnitPrice = oi.UnitPrice
                     }).ToList()
-                }).ToListAsync();
+                });
+            }
+
+            return result;
         }
 
         public async Task<bool> UpdateOrderStatusAsync(Guid userId, UpdateOrderStatusDto dto)

@@ -12,10 +12,13 @@ namespace DineDrop.Application.Modules.Restaurants.DTOs
         public double Rating { get; set; }
         public double Latitude { get; set; }
         public double Longitude { get; set; }
+        public string? ImageUrl { get; set; }
         
         // From RestaurantProfile Entity
         public string Address { get; set; } = string.Empty;
         public string BusinessType { get; set; } = string.Empty;
         public string BusinessHours { get; set; } = string.Empty;
+        
+        public int DishCount { get; set; }
     }
 }

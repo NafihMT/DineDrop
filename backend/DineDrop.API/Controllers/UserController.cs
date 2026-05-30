@@ -12,9 +12,11 @@ namespace DineDrop.API.Controllers
     public class UserController : ControllerBase
     {
         private readonly IUserService _userService;
-        public UserController(IUserService userService)
+        private readonly IConfiguration _config;
+        public UserController(IUserService userService, IConfiguration config)
         {
             _userService = userService;
+            _config = config;
         }
 
         [HttpGet("restaurants")]
@@ -90,7 +92,54 @@ namespace DineDrop.API.Controllers
         {
             var userId = GetUserId();
             var newBalance = await _userService.AddWalletFundsAsync(userId, dto.Amount);
-            return Ok(new { message = $"Successfully added ${dto.Amount:F2} to wallet.", newBalance });
+            return Ok(new { message = $"Successfully added ₹{dto.Amount:F2} to wallet.", newBalance });
+        }
+
+        [Authorize]
+        [HttpPost("wallet/create-razorpay-order")]
+        public IActionResult CreateRazorpayOrder([FromBody] AddFundsDto dto)
+        {
+            var keyId = _config["Razorpay:KeyId"];
+            var keySecret = _config["Razorpay:KeySecret"];
+
+            Razorpay.Api.RazorpayClient client = new Razorpay.Api.RazorpayClient(keyId, keySecret);
+            
+            Dictionary<string, object> options = new Dictionary<string, object>();
+            options.Add("amount", (int)(dto.Amount * 100)); // amount in the smallest currency unit
+            options.Add("currency", "INR");
+            options.Add("receipt", Guid.NewGuid().ToString());
+
+            Razorpay.Api.Order order = client.Order.Create(options);
+
+            return Ok(new { orderId = order["id"].ToString() });
+        }
+
+        [Authorize]
+        [HttpPost("wallet/verify-payment")]
+        public async Task<IActionResult> VerifyPayment([FromBody] VerifyPaymentDto dto)
+        {
+            var keySecret = _config["Razorpay:KeySecret"];
+            
+            var payload = dto.RazorpayOrderId + "|" + dto.RazorpayPaymentId;
+            var expectedSignature = ComputeHmacSha256(payload, keySecret!);
+            
+            if (expectedSignature != dto.RazorpaySignature)
+            {
+                return BadRequest("Invalid signature");
+            }
+            
+            var userId = GetUserId();
+            var newBalance = await _userService.AddWalletFundsAsync(userId, dto.Amount);
+            return Ok(new { message = $"Successfully added ₹{dto.Amount:F2} to wallet.", newBalance });
+        }
+        
+        private string ComputeHmacSha256(string payload, string secret)
+        {
+            using (var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(secret)))
+            {
+                var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(payload));
+                return BitConverter.ToString(hash).Replace("-", "").ToLower();
+            }
         }
 
         private Guid GetUserId()

@@ -4,6 +4,7 @@ using DineDrop.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DineDrop.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260529071942_AddRestaurantImageUrl")]
+    partial class AddRestaurantImageUrl
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -283,31 +286,17 @@ namespace DineDrop.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("ExpiryDate")
                         .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<decimal>("MinOrderAmount")
                         .HasColumnType("decimal(18,2)");
-
-                    b.Property<Guid?>("RestaurantId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -321,34 +310,6 @@ namespace DineDrop.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Offers");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("11111111-1111-1111-1111-111111111111"),
-                            Code = "NEW50",
-                            CreatedAt = new DateTime(2026, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
-                            CreatedBy = "Platform",
-                            ExpiryDate = new DateTime(2030, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
-                            IsActive = true,
-                            IsDeleted = false,
-                            MinOrderAmount = 0.00m,
-                            Type = 0,
-                            Value = 50.00m
-                        },
-                        new
-                        {
-                            Id = new Guid("22222222-2222-2222-2222-222222222222"),
-                            Code = "FIRST50",
-                            CreatedAt = new DateTime(2026, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
-                            CreatedBy = "Platform",
-                            ExpiryDate = new DateTime(2030, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
-                            IsActive = true,
-                            IsDeleted = false,
-                            MinOrderAmount = 0.00m,
-                            Type = 0,
-                            Value = 50.00m
-                        });
                 });
 
             modelBuilder.Entity("DineDrop.Domain.Entities.Order", b =>
@@ -378,9 +339,6 @@ namespace DineDrop.Infrastructure.Migrations
                     b.Property<bool>("IsRated")
                         .HasColumnType("bit");
 
-                    b.Property<Guid?>("OfferId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<int>("PaymentStatus")
                         .HasColumnType("int");
 
@@ -402,8 +360,6 @@ namespace DineDrop.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DriverId");
-
-                    b.HasIndex("OfferId");
 
                     b.HasIndex("RestaurantId");
 
@@ -808,13 +764,13 @@ namespace DineDrop.Infrastructure.Migrations
                         {
                             Id = new Guid("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b"),
                             ApprovalStatus = 1,
-                            CreatedAt = new DateTime(2026, 5, 29, 8, 48, 0, 714, DateTimeKind.Utc).AddTicks(7294),
+                            CreatedAt = new DateTime(2026, 5, 29, 7, 19, 40, 620, DateTimeKind.Utc).AddTicks(6394),
                             Email = "admin@dinedrop.com",
                             IsActive = true,
                             IsBlocked = false,
                             IsDeleted = false,
                             Name = "Admin",
-                            PasswordHash = "$2a$11$gjBGXD40po5fKzIUo9dWX.24ujNrd.VBoM59JBM7RVXUxzPvUgWXi",
+                            PasswordHash = "$2a$11$WQRT2JV9CpeB0cmOtjxugetyVXURDtNqXy7IqTvuZhqe2Dy9hW4Zm",
                             Phone = "9999999999",
                             Role = 3
                         });
@@ -898,11 +854,6 @@ namespace DineDrop.Infrastructure.Migrations
                         .HasForeignKey("DriverId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("DineDrop.Domain.Entities.Offer", "Offer")
-                        .WithMany()
-                        .HasForeignKey("OfferId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("DineDrop.Domain.Entities.Restaurant", "Restaurant")
                         .WithMany()
                         .HasForeignKey("RestaurantId")
@@ -914,8 +865,6 @@ namespace DineDrop.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Offer");
 
                     b.Navigation("Restaurant");
 

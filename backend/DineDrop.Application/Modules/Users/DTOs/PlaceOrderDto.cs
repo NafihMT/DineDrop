@@ -9,6 +9,7 @@ namespace DineDrop.Application.Modules.Users.DTOs
         public Guid RestaurantId { get; set; }
         public Guid? AddressId { get; set; }
         public List<OrderItemCreateDto> Items { get; set; } = new();
+        public string? CouponCode { get; set; }
     }
 
     public class OrderItemCreateDto
@@ -43,6 +44,7 @@ namespace DineDrop.Application.Modules.Users.DTOs
         public double? DriverLongitude { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal DeliveryFee { get; set; }
+        public decimal DiscountAmount { get; set; }
         public OrderStatus Status { get; set; }
         public DateTime CreatedAt { get; set; }
         public string? DeliveryOtp { get; set; }

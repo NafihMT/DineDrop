@@ -21,6 +21,8 @@ namespace DineDrop.Domain.Entities
 
         public double Rating { get; set; }
 
+        public string? ImageUrl { get; set; }
+
         public ICollection<MenuItem> MenuItems { get; set; }
     }
 }

@@ -54,6 +54,35 @@ namespace DineDrop.Infrastructure.Data
                     IsBlocked = false
                 }
             );
+
+            modelBuilder.Entity<Offer>().HasData(
+                new Offer
+                {
+                    Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    Code = "NEW50",
+                    CreatedBy = "Platform",
+                    RestaurantId = null,
+                    IsActive = true,
+                    Type = OfferType.Percentage,
+                    Value = 50.00m,
+                    MinOrderAmount = 0.00m,
+                    ExpiryDate = DateTime.Parse("2030-01-01T00:00:00Z"),
+                    CreatedAt = DateTime.Parse("2026-01-01T00:00:00Z")
+                },
+                new Offer
+                {
+                    Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    Code = "FIRST50",
+                    CreatedBy = "Platform",
+                    RestaurantId = null,
+                    IsActive = true,
+                    Type = OfferType.Percentage,
+                    Value = 50.00m,
+                    MinOrderAmount = 0.00m,
+                    ExpiryDate = DateTime.Parse("2030-01-01T00:00:00Z"),
+                    CreatedAt = DateTime.Parse("2026-01-01T00:00:00Z")
+                }
+            );
         }
     }
 

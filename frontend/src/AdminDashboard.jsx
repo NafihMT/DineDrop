@@ -362,7 +362,7 @@ const AdminDashboard = ({ onLogout }) => {
               <StatCard title="Pending Restaurants" value={stats.pendingRequests} color="#EF9F27" icon="⏳" />
               <StatCard title="Total Users" value={stats.totalUsers} color="#9b59b6" icon="👤" />
               <StatCard title="Active Orders" value={stats.activeOrders} color="#3B82F6" icon="🚚" />
-              <StatCard title="Total Revenue" value={`$${stats.totalRevenue.toFixed(2)}`} color="#2ecc71" icon="💵" />
+              <StatCard title="Total Revenue" value={`₹${stats.totalRevenue.toFixed(2)}`} color="#2ecc71" icon="💵" />
               <StatCard title="Active Drivers" value={stats.totalDrivers} color="#f39c12" icon="🛵" />
               <StatCard title="Pending Drivers" value={stats.pendingDrivers} color="#e17055" icon="🔔" />
             </div>
@@ -597,7 +597,7 @@ const AdminDashboard = ({ onLogout }) => {
                           <td style={{ padding: '24px 20px', fontWeight: '800', fontFamily: 'monospace', color: '#00f3ff', fontSize: '1rem' }}>#{o.id.substring(0, 8)}</td>
                           <td style={{ padding: '24px 20px', fontWeight: '700', color: '#fff' }}>{o.customerName}</td>
                           <td style={{ padding: '24px 20px', color: '#ddd', fontWeight: '600' }}>{o.restaurantName}</td>
-                          <td style={{ padding: '24px 20px', fontWeight: '900', color: '#2ecc71', fontSize: '1.1rem' }}>${o.totalAmount.toFixed(2)}</td>
+                          <td style={{ padding: '24px 20px', fontWeight: '900', color: '#2ecc71', fontSize: '1.1rem' }}>₹{o.totalAmount.toFixed(2)}</td>
                           <td style={{ padding: '24px 20px' }}>
                             <span style={{ padding: '6px 12px', borderRadius: '20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '0.8rem', fontWeight: '700' }}>{o.status}</span>
                           </td>

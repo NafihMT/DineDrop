@@ -276,7 +276,10 @@ namespace DineDrop.Infrastructure.Services
             var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.UserId == userId);
             if (driver == null) return false;
 
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == orderId && o.DriverId == driver.Id);
+            var order = await _context.Orders
+                .Include(o => o.Restaurant)
+                .Include(o => o.Offer)
+                .FirstOrDefaultAsync(o => o.Id == orderId && o.DriverId == driver.Id);
             if (order == null || order.Status != OrderStatus.Picked) return false;
 
             // Retrieve and validate Hand-off OTP from Redis
@@ -315,6 +318,45 @@ namespace DineDrop.Infrastructure.Services
                 Description = $"Earnings for delivery of order #{order.Id.ToString().Substring(0, 8)}"
             };
             _context.LedgerEntries.Add(ledger);
+
+            // Credit restaurant owner with the food revenue
+            if (order.Restaurant != null)
+            {
+                var restaurantOwnerId = order.Restaurant.OwnerId;
+                var restOwnerWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == restaurantOwnerId);
+                if (restOwnerWallet == null)
+                {
+                    restOwnerWallet = new Domain.Entities.Wallet { UserId = restaurantOwnerId, Balance = 0.00m };
+                    _context.Wallets.Add(restOwnerWallet);
+                }
+
+                // Subtotal before coupon discount = TotalAmount - DeliveryFee + DiscountAmount
+                decimal subtotalBeforeDiscount = order.TotalAmount - order.DeliveryFee + order.DiscountAmount;
+                decimal restaurantEarnings = subtotalBeforeDiscount;
+
+                // If coupon was created by the Restaurant, the Restaurant bears the cost of discount.
+                // If coupon was created by Platform (or there is no coupon), the Restaurant gets full subtotal.
+                if (order.Offer != null && order.Offer.CreatedBy == "Restaurant")
+                {
+                    restaurantEarnings = subtotalBeforeDiscount - order.DiscountAmount;
+                }
+
+                restOwnerWallet.Balance += restaurantEarnings;
+
+                // Create restaurant owner ledger entry
+                var restLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = restaurantOwnerId,
+                    EntityType = Domain.Enums.LedgerEntityType.Restaurant,
+                    Type = Domain.Enums.LedgerType.Credit,
+                    Amount = restaurantEarnings,
+                    OrderId = order.Id,
+                    Description = order.Offer != null 
+                        ? $"Earnings for order #{order.Id.ToString().Substring(0, 8)} (Applied Coupon {order.Offer.Code} - Sponsored by {order.Offer.CreatedBy})"
+                        : $"Earnings for order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(restLedger);
+            }
 
             await _context.SaveChangesAsync();
 
@@ -458,15 +500,36 @@ namespace DineDrop.Infrastructure.Services
                 .OrderByDescending(o => o.UpdatedAt)
                 .ToListAsync();
 
-            var history = deliveredOrders.Select(o => new DeliveryHistoryDto
+            // Fetch all ratings for this driver
+            var ratings = await _context.Ratings
+                .Where(r => r.DriverId == driver.Id)
+                .OrderBy(r => r.CreatedAt)
+                .ToListAsync();
+
+            var history = new List<DeliveryHistoryDto>();
+            foreach (var o in deliveredOrders)
             {
-                OrderId = o.Id,
-                RestaurantName = o.Restaurant?.Name ?? "Unknown Restaurant",
-                CustomerName = o.User?.Name ?? "Customer",
-                TotalAmount = o.TotalAmount,
-                Earnings = o.DeliveryFee,
-                DeliveredAt = o.UpdatedAt ?? DateTime.UtcNow
-            }).ToList();
+                Rating? matchingRating = null;
+                if (o.IsRated)
+                {
+                    matchingRating = ratings
+                        .Where(r => r.UserId == o.UserId && r.CreatedAt >= o.CreatedAt)
+                        .OrderBy(r => r.CreatedAt)
+                        .FirstOrDefault();
+                }
+
+                history.Add(new DeliveryHistoryDto
+                {
+                    OrderId = o.Id,
+                    RestaurantName = o.Restaurant?.Name ?? "Unknown Restaurant",
+                    CustomerName = o.User?.Name ?? "Customer",
+                    TotalAmount = o.TotalAmount,
+                    Earnings = o.DeliveryFee,
+                    DeliveredAt = o.UpdatedAt ?? DateTime.UtcNow,
+                    DriverRating = matchingRating?.Value,
+                    DriverFeedback = matchingRating?.Comment
+                });
+            }
 
             decimal totalEarnings = history.Sum(h => h.Earnings);
 

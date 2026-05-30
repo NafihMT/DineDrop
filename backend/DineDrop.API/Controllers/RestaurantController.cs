@@ -80,6 +80,42 @@ namespace DineDrop.API.Controllers
             return Ok(new { imageUrl = item.ImageUrl });
         }
 
+        [HttpPost("profile/upload-image")]
+        public async Task<IActionResult> UploadProfileImage(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            var allowedContentTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml" };
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg" };
+            
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (string.IsNullOrEmpty(file.ContentType) || !allowedContentTypes.Contains(file.ContentType.ToLowerInvariant()) || !allowedExtensions.Contains(ext))
+            {
+                return BadRequest("Only image files (.jpg, .jpeg, .png, .gif, .webp, .svg) are allowed.");
+            }
+
+            var userId = GetUserId();
+            var profile = await _restaurantService.GetProfileAsync(userId);
+
+            var uploads = Path.Combine(_env.WebRootPath, "uploads", "restaurants");
+            if (!Directory.Exists(uploads))
+                Directory.CreateDirectory(uploads);
+
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+            var filePath = Path.Combine(uploads, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            profile.ImageUrl = $"/uploads/restaurants/{fileName}";
+            await _restaurantService.UpdateProfileAsync(userId, profile);
+
+            return Ok(new { imageUrl = profile.ImageUrl });
+        }
+
 
         private Guid GetUserId()
         {

@@ -56,8 +56,8 @@ namespace DineDrop.Infrastructure.Services
                 var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<OrderHub>>();
 
-                // Threshold: 20 seconds ago for testing
-                var thresholdTime = DateTime.UtcNow.AddSeconds(-20);
+                // Threshold: 30 Minutes ago for testing
+                var thresholdTime = DateTime.UtcNow.AddMinutes(-30);
 
                 var activeCount = await context.Orders
                     .CountAsync(o => o.DriverId == null && 
@@ -68,7 +68,7 @@ namespace DineDrop.Infrastructure.Services
                 _logger.LogInformation("Background scanning: Found {Count} active orders with no driver assigned.", activeCount);
 
                 // Find all orders that were accepted by the restaurant but have no driver assigned
-                // and have been in this state for more than 20 seconds
+                // and have been in this state for more than 30 Minutes
                 var unpickedOrders = await context.Orders
                     .Include(o => o.Restaurant)
                     .Where(o => o.DriverId == null && 

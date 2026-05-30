@@ -67,5 +67,7 @@ namespace DineDrop.Application.Modules.Drivers.DTOs
         public decimal TotalAmount { get; set; }
         public decimal Earnings { get; set; }
         public DateTime DeliveredAt { get; set; }
+        public int? DriverRating { get; set; }
+        public string? DriverFeedback { get; set; }
     }
 }

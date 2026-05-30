@@ -88,9 +88,52 @@ namespace DineDrop.Infrastructure.Services
                     totalAmount += (orderItem.UnitPrice * orderItem.Quantity);
                 }
 
-                order.TotalAmount = totalAmount;
+                decimal discountAmount = 0;
+                Guid? offerId = null;
+
+                if (!string.IsNullOrWhiteSpace(dto.CouponCode))
+                {
+                    var code = dto.CouponCode.Trim().ToUpper();
+                    var offer = await _context.Offers.FirstOrDefaultAsync(o => o.Code.ToUpper() == code && o.IsActive && o.ExpiryDate >= DateTime.UtcNow && !o.IsDeleted);
+                    if (offer == null)
+                    {
+                        throw new Exception("Coupon code is invalid or has expired.");
+                    }
+                    if (totalAmount < offer.MinOrderAmount)
+                    {
+                        throw new Exception($"Minimum order amount for coupon {offer.Code} is ₹{offer.MinOrderAmount:F2}.");
+                    }
+                    if (offer.CreatedBy == "Restaurant" && offer.RestaurantId.HasValue && offer.RestaurantId.Value != dto.RestaurantId)
+                    {
+                        throw new Exception("This coupon code is only valid for another restaurant.");
+                    }
+
+                    // First-order coupon check for NEW50 or FIRST50
+                    if (code == "NEW50" || code == "FIRST50")
+                    {
+                        var hasOrders = await _context.Orders.AnyAsync(o => o.UserId == userId && o.Status != OrderStatus.Cancelled);
+                        if (hasOrders)
+                        {
+                            throw new Exception("This coupon is only valid for your first order.");
+                        }
+                    }
+
+                    if (offer.Type == OfferType.Percentage)
+                    {
+                        discountAmount = Math.Round(totalAmount * (offer.Value / 100.00m), 2);
+                    }
+                    else if (offer.Type == OfferType.Flat)
+                    {
+                        discountAmount = Math.Min(totalAmount, offer.Value);
+                    }
+
+                    offerId = offer.Id;
+                }
+
+                order.DiscountAmount = discountAmount;
+                order.OfferId = offerId;
                 order.DeliveryFee = 5.00m; 
-                order.TotalAmount += order.DeliveryFee;
+                order.TotalAmount = totalAmount + order.DeliveryFee - discountAmount;
 
                 var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
                 if (wallet == null)
@@ -100,7 +143,7 @@ namespace DineDrop.Infrastructure.Services
                 }
 
                 if (wallet.Balance < order.TotalAmount)
-                    throw new Exception($"Insufficient funds in DineDrop Wallet. Balance: ${wallet.Balance:F2}, Order Total: ${order.TotalAmount:F2}. Please add funds to your wallet in the Profile section.");
+                    throw new Exception($"Insufficient funds in DineDrop Wallet. Balance: ₹{wallet.Balance:F2}, Order Total: ₹{order.TotalAmount:F2}. Please add funds to your wallet in the Profile section.");
 
                 wallet.Balance -= order.TotalAmount;
 
@@ -162,6 +205,7 @@ namespace DineDrop.Infrastructure.Services
                 .Where(o => o.Id == orderId && o.UserId == userId)
                 .Include(o => o.Restaurant)
                 .Include(o => o.User)
+                .Include(o => o.Offer)
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.MenuItem)
                 .FirstOrDefaultAsync();
@@ -230,6 +274,7 @@ namespace DineDrop.Infrastructure.Services
                 DriverLongitude = driverLng,
                 TotalAmount = order.TotalAmount,
                 DeliveryFee = order.DeliveryFee,
+                DiscountAmount = order.DiscountAmount,
                 Status = order.Status,
                 CreatedAt = order.CreatedAt,
                 DeliveryOtp = deliveryOtp,
@@ -424,7 +469,7 @@ namespace DineDrop.Infrastructure.Services
 
                 if (wallet.Balance < totalAmount)
                 {
-                    throw new Exception($"Insufficient funds in DineDrop Wallet. Balance: ${wallet.Balance:F2}, Deal Total: ${totalAmount:F2}.");
+                    throw new Exception($"Insufficient funds in DineDrop Wallet. Balance: ₹{wallet.Balance:F2}, Deal Total: ₹{totalAmount:F2}.");
                 }
 
                 var originalOrder = await _context.Orders
