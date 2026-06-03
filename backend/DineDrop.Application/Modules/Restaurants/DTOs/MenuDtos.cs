@@ -12,6 +12,7 @@ namespace DineDrop.Application.Modules.Restaurants.DTOs
         public decimal Price { get; set; }
         public string? ImageUrl { get; set; }
         public bool IsAvailable { get; set; } = true;
+        public bool IsVeg { get; set; } = true;
         
         // Context for Explore view
         public Guid? RestaurantId { get; set; }

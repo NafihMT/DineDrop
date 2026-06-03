@@ -76,7 +76,8 @@ namespace DineDrop.Infrastructure.Services
             var pendingRequests = await _context.Users.CountAsync(u => u.Role == UserRole.Restaurant && u.ApprovalStatus == ApprovalStatus.Pending);
             var totalUsers = await _context.Users.CountAsync(u => u.Role == UserRole.User);
             var activeOrders = await _context.Orders.CountAsync(o => o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled);
-            var totalRevenue = await _context.Orders.Where(o => o.PaymentStatus == PaymentStatus.Success).SumAsync(o => o.TotalAmount);
+            var adminWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.User.Role == UserRole.Admin);
+            var totalRevenue = adminWallet?.Balance ?? 0m;
             var totalDrivers = await _context.Users.CountAsync(u => u.Role == UserRole.Driver && u.ApprovalStatus == ApprovalStatus.Approved);
             var pendingDrivers = await _context.Users.CountAsync(u => u.Role == UserRole.Driver && u.ApprovalStatus == ApprovalStatus.Pending);
 

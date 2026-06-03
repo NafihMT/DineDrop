@@ -60,12 +60,13 @@ namespace DineDrop.Infrastructure.Services
 
                 var order = new Order
                 {
+                    Id = Guid.NewGuid(),
                     UserId = userId,
                     RestaurantId = dto.RestaurantId,
                     AddressId = dto.AddressId,
                     Status = OrderStatus.Placed,
                     PaymentStatus = PaymentStatus.Pending,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30),
                     OrderItems = new List<OrderItem>()
                 };
 
@@ -94,7 +95,7 @@ namespace DineDrop.Infrastructure.Services
                 if (!string.IsNullOrWhiteSpace(dto.CouponCode))
                 {
                     var code = dto.CouponCode.Trim().ToUpper();
-                    var offer = await _context.Offers.FirstOrDefaultAsync(o => o.Code.ToUpper() == code && o.IsActive && o.ExpiryDate >= DateTime.UtcNow && !o.IsDeleted);
+                    var offer = await _context.Offers.FirstOrDefaultAsync(o => o.Code.ToUpper() == code && o.IsActive && o.ExpiryDate >= DateTime.UtcNow.AddHours(5).AddMinutes(30) && !o.IsDeleted);
                     if (offer == null)
                     {
                         throw new Exception("Coupon code is invalid or has expired.");
@@ -132,33 +133,73 @@ namespace DineDrop.Infrastructure.Services
 
                 order.DiscountAmount = discountAmount;
                 order.OfferId = offerId;
-                order.DeliveryFee = 5.00m; 
-                order.TotalAmount = totalAmount + order.DeliveryFee - discountAmount;
+                
+                distance = CalculateDistance(restaurant.Latitude, restaurant.Longitude, userAddress.Latitude, userAddress.Longitude);
+                decimal deliveryCharge = (decimal)Math.Round(Math.Max(5, distance * 2), 2);
+                
+                decimal platformFee = 20.00m;
+                decimal subtotal = totalAmount - discountAmount;
+                decimal gstOnFood = Math.Round(subtotal * 0.05m, 2);
+                decimal gstOnDeliveryAndPlatform = Math.Round((platformFee + deliveryCharge) * 0.18m, 2);
+                decimal totalGst = gstOnFood + gstOnDeliveryAndPlatform;
 
-                var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
-                if (wallet == null)
+                order.DeliveryFee = deliveryCharge;
+                order.TotalAmount = subtotal + platformFee + deliveryCharge + totalGst;
+
+                var paymentMethod = Enum.TryParse<PaymentMethod>(dto.PaymentMethod, true, out var pm) ? pm : PaymentMethod.Wallet;
+                order.PaymentMethod = paymentMethod;
+
+                if (paymentMethod == PaymentMethod.Wallet || paymentMethod == PaymentMethod.Online)
                 {
-                    wallet = new Wallet { UserId = userId, Balance = 100.00m }; 
-                    _context.Wallets.Add(wallet);
+                    var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+                    if (wallet == null)
+                    {
+                        wallet = new Wallet { UserId = userId, Balance = 100.00m }; 
+                        _context.Wallets.Add(wallet);
+                    }
+
+                    if (wallet.Balance < order.TotalAmount)
+                        throw new Exception($"Insufficient funds in DineDrop Wallet. Balance: ₹{wallet.Balance:F2}, Order Total: ₹{order.TotalAmount:F2}. Please add funds to your wallet in the Profile section.");
+
+                    wallet.Balance -= order.TotalAmount;
+                    order.PaymentStatus = PaymentStatus.Success;
+
+                    var ledger = new LedgerEntry
+                    {
+                        EntityId = userId,
+                        EntityType = LedgerEntityType.User,
+                        Type = LedgerType.Debit,
+                        Amount = order.TotalAmount,
+                        OrderId = order.Id,
+                        Description = $"Payment ({paymentMethod}) for order #{order.Id.ToString().Substring(0, 8)}"
+                    };
+                    _context.LedgerEntries.Add(ledger);
+
+                    // Fund Admin Wallet
+                    var adminId = Guid.Parse("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b");
+                    var adminWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == adminId);
+                    if (adminWallet == null)
+                    {
+                        adminWallet = new Wallet { UserId = adminId, Balance = 0.00m };
+                        _context.Wallets.Add(adminWallet);
+                    }
+                    adminWallet.Balance += order.TotalAmount;
+
+                    var adminLedger = new LedgerEntry
+                    {
+                        EntityId = adminId,
+                        EntityType = LedgerEntityType.Admin,
+                        Type = LedgerType.Credit,
+                        Amount = order.TotalAmount,
+                        OrderId = order.Id,
+                        Description = $"Collected amount ({paymentMethod}) for order #{order.Id.ToString().Substring(0, 8)}"
+                    };
+                    _context.LedgerEntries.Add(adminLedger);
                 }
-
-                if (wallet.Balance < order.TotalAmount)
-                    throw new Exception($"Insufficient funds in DineDrop Wallet. Balance: ₹{wallet.Balance:F2}, Order Total: ₹{order.TotalAmount:F2}. Please add funds to your wallet in the Profile section.");
-
-                wallet.Balance -= order.TotalAmount;
-
-                order.PaymentStatus = PaymentStatus.Success;
-
-                var ledger = new LedgerEntry
+                else if (paymentMethod == PaymentMethod.COD)
                 {
-                    EntityId = userId,
-                    EntityType = LedgerEntityType.User,
-                    Type = LedgerType.Debit,
-                    Amount = order.TotalAmount,
-                    OrderId = order.Id,
-                    Description = $"Payment for order #{order.Id.ToString().Substring(0, 8)}"
-                };
-                _context.LedgerEntries.Add(ledger);
+                    order.PaymentStatus = PaymentStatus.Pending;
+                }
 
                 _context.Orders.Add(order);
                 await _context.SaveChangesAsync();
@@ -384,7 +425,7 @@ namespace DineDrop.Infrastructure.Services
                     RestaurantLongitude = order.Restaurant.Longitude,
                     OriginalSubtotal = subtotal,
                     RescuedPrice = subtotal * 0.5m,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(45),
+                    ExpiresAt = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddMinutes(45),
                     CancelledByUserId = order.UserId,
                     PreviousStatus = originalStatus,
                     Items = order.OrderItems.Select(oi => new CustomerOrderItemDto
@@ -524,7 +565,7 @@ namespace DineDrop.Infrastructure.Services
                         ? deal.PreviousStatus 
                         : OrderStatus.Ready,
                     PaymentStatus = PaymentStatus.Success,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30),
                     DeliveryFee = deliveryFee,
                     TotalAmount = totalAmount,
                     OrderItems = originalOrder.OrderItems.Select(oi => new OrderItem
@@ -574,26 +615,29 @@ namespace DineDrop.Infrastructure.Services
             order.IsRated = true;
 
             // Create Restaurant Rating
-            var restRating = new Rating
+            if (dto.RestaurantRating > 0)
             {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                RestaurantId = order.RestaurantId,
-                Value = dto.RestaurantRating,
-                Comment = dto.RestaurantFeedback ?? string.Empty
-            };
-            _context.Ratings.Add(restRating);
+                var restRating = new Rating
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    RestaurantId = order.RestaurantId,
+                    Value = dto.RestaurantRating,
+                    Comment = dto.RestaurantFeedback ?? string.Empty
+                };
+                _context.Ratings.Add(restRating);
 
-            // Update restaurant average rating
-            var restaurant = await _context.Restaurants.FindAsync(order.RestaurantId);
-            if (restaurant != null)
-            {
-                var allRestRatings = await _context.Ratings
-                    .Where(r => r.RestaurantId == order.RestaurantId)
-                    .Select(r => r.Value)
-                    .ToListAsync();
-                allRestRatings.Add(dto.RestaurantRating);
-                restaurant.Rating = allRestRatings.Average();
+                // Update restaurant average rating
+                var restaurant = await _context.Restaurants.FindAsync(order.RestaurantId);
+                if (restaurant != null)
+                {
+                    var allRestRatings = await _context.Ratings
+                        .Where(r => r.RestaurantId == order.RestaurantId)
+                        .Select(r => r.Value)
+                        .ToListAsync();
+                    allRestRatings.Add(dto.RestaurantRating);
+                    restaurant.Rating = allRestRatings.Average();
+                }
             }
 
             if (order.DriverId.HasValue)

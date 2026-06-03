@@ -1,4 +1,4 @@
-﻿using DineDrop.Application.Modules.Restaurants.DTOs;
+using DineDrop.Application.Modules.Restaurants.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Linq;

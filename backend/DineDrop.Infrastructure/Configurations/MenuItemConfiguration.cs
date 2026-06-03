@@ -1,4 +1,4 @@
-﻿using DineDrop.Domain.Entities;
+using DineDrop.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

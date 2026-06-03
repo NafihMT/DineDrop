@@ -73,7 +73,7 @@ namespace DineDrop.API.Controllers
                 HttpOnly = true, 
                 Secure = false, // Set to false for localhost testing
                 SameSite = SameSiteMode.Lax,
-                Expires = DateTime.UtcNow.AddHours(2) 
+                Expires = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddHours(2) 
             });
 
             // Refresh Token
@@ -82,7 +82,7 @@ namespace DineDrop.API.Controllers
                 HttpOnly = true, 
                 Secure = false, // Set to false for localhost testing
                 SameSite = SameSiteMode.Lax,
-                Expires = DateTime.UtcNow.AddDays(7) 
+                Expires = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7) 
             });
         }
 

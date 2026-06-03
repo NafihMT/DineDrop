@@ -1,4 +1,4 @@
-﻿using DineDrop.Application.Modules.Restaurants.Interfaces;
+using DineDrop.Application.Modules.Restaurants.Interfaces;
 using DineDrop.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;

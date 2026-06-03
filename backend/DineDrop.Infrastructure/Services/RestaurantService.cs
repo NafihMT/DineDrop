@@ -28,6 +28,8 @@ namespace DineDrop.Infrastructure.Services
             var profile = await _context.RestaurantProfiles
                 .FirstOrDefaultAsync(p => p.UserId == userId);
 
+            var user = await _context.Users.FindAsync(userId);
+
             if (restaurant == null || profile == null)
                 throw new Exception("Restaurant profile not found");
 
@@ -42,7 +44,8 @@ namespace DineDrop.Infrastructure.Services
                 BusinessHours = profile.BusinessHours,
                 Latitude = restaurant.Latitude,
                 Longitude = restaurant.Longitude,
-                ImageUrl = restaurant.ImageUrl
+                ImageUrl = restaurant.ImageUrl,
+                ContactNumber = user?.Phone ?? string.Empty
             };
         }
 
@@ -54,7 +57,9 @@ namespace DineDrop.Infrastructure.Services
             var profile = await _context.RestaurantProfiles
                 .FirstOrDefaultAsync(p => p.UserId == userId);
 
-            if (restaurant == null || profile == null)
+            var user = await _context.Users.FindAsync(userId);
+
+            if (restaurant == null || profile == null || user == null)
                 throw new Exception("Restaurant profile not found");
 
             // Update Restaurant Entity
@@ -69,6 +74,9 @@ namespace DineDrop.Infrastructure.Services
             profile.Address = dto.Address;
             profile.BusinessType = dto.BusinessType;
             profile.BusinessHours = dto.BusinessHours;
+            
+            // Update User Entity Phone (Contact Number)
+            user.Phone = dto.ContactNumber;
 
             await _context.SaveChangesAsync();
 

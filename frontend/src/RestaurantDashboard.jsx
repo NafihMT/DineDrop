@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
 import * as signalR from "@microsoft/signalr";
 import LocationPicker from './LocationPicker';
+import WalletView from './WalletView';
 
 const RestaurantDashboard = ({ onLogout }) => {
   const [menuItems, setMenuItems] = useState([]);
@@ -40,7 +41,7 @@ const RestaurantDashboard = ({ onLogout }) => {
   const [stats, setStats] = useState({ todayRevenue: 0, activeOrdersCount: 0, totalOrdersCount: 0, averageOrderValue: 0, revenueChart: [] });
 
   // Form states
-  const [newItem, setNewItem] = useState({ name: '', description: '', price: '', categoryName: '', isAvailable: true });
+  const [newItem, setNewItem] = useState({ name: '', description: '', price: '', categoryName: '', isAvailable: true, isVeg: true });
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   
@@ -167,7 +168,7 @@ const RestaurantDashboard = ({ onLogout }) => {
   };
 
   const deleteOffer = async (offerId) => {
-    if (!confirm("Are you sure you want to delete this offer?")) return;
+    if (!(await window.confirm("Are you sure you want to delete this offer?"))) return;
     try {
       const response = await fetch(`http://localhost:5070/api/offer/${offerId}`, {
         method: 'DELETE',
@@ -269,6 +270,21 @@ const RestaurantDashboard = ({ onLogout }) => {
     }
   };
 
+  const handleLocationSelect = async (lat, lng) => {
+    setProfile(prev => ({ ...prev, latitude: lat, longitude: lng }));
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      const data = await res.json();
+      if (data && data.display_name) {
+        // Only keep the first two parts of the address (e.g., Road name and City/Town)
+        const shortAddress = data.display_name.split(',').slice(0, 2).join(',').trim();
+        setProfile(prev => ({ ...prev, address: shortAddress }));
+      }
+    } catch (err) {
+      console.error("Reverse geocoding failed", err);
+    }
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setIsSavingProfile(true);
@@ -356,7 +372,8 @@ const RestaurantDashboard = ({ onLogout }) => {
       description: newItem.description,
       price: parseFloat(newItem.price),
       categoryName: newItem.categoryName,
-      isAvailable: newItem.isAvailable
+      isAvailable: newItem.isAvailable,
+      isVeg: newItem.isVeg
     };
 
     try {
@@ -381,7 +398,7 @@ const RestaurantDashboard = ({ onLogout }) => {
           });
         }
 
-        setNewItem({ name: '', description: '', price: '', categoryName: '', isAvailable: true });
+        setNewItem({ name: '', description: '', price: '', categoryName: '', isAvailable: true, isVeg: true });
         setSelectedFile(null);
         setPreviewUrl(null);
         setEditingItem(null);
@@ -394,18 +411,27 @@ const RestaurantDashboard = ({ onLogout }) => {
   
   const handleAddCategory = async (e) => {
     e.preventDefault();
-    if (!customCategoryName.trim()) return;
+    const newName = customCategoryName.trim();
+    if (!newName) return;
+    
+    // Prevent duplicate categories
+    const isDuplicate = categories.some(c => c.name.toLowerCase() === newName.toLowerCase());
+    if (isDuplicate) {
+      alert(`Category "${newName}" already exists!`);
+      return;
+    }
+
     setIsAddingCategory(true);
     try {
       const response = await fetch('http://localhost:5070/api/restaurant/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: customCategoryName.trim() }),
+        body: JSON.stringify({ name: newName }),
         credentials: 'include'
       });
       if (response.ok) {
         const created = await response.json();
-        alert(`Category "₹{created.name}" created successfully!`);
+        alert(`Category "${created.name}" created successfully!`);
         // Refresh categories list
         const catRes = await fetch('http://localhost:5070/api/restaurant/categories', { credentials: 'include' });
         if (catRes.ok) {
@@ -429,20 +455,70 @@ const RestaurantDashboard = ({ onLogout }) => {
   };
 
   const handleDeleteCategory = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete the category "${name}"? Menu items under this category will no longer have it.`)) return;
-    try {
-      const res = await fetch(`http://localhost:5070/api/restaurant/categories/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      if (res.ok) {
-        setCategories(prev => prev.filter(c => c.id !== id));
-      } else {
-        alert("Failed to delete category");
+    const dishesInCategory = menuItems.filter(item => item.categoryName === name);
+    
+    if (dishesInCategory.length > 0) {
+      const dishNames = dishesInCategory.map(d => d.name).join(', ');
+      let promptMsg = `The category "${name}" contains ${dishesInCategory.length} dish(es) (${dishNames}).\n\nTo move them, select the new category below:`;
+      const availableCategories = ['Uncategorized', ...categories.map(c => c.name).filter(n => n !== name)];
+      const fallbackCategory = await window.prompt(promptMsg, 'Uncategorized', availableCategories);
+      
+      if (!fallbackCategory || fallbackCategory.trim() === '') {
+        return; // User cancelled
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error deleting category");
+
+      const targetCategory = fallbackCategory.trim();
+
+      try {
+        // First, move dishes to new category
+        await Promise.all(dishesInCategory.map(item => {
+           const updatedDto = { ...item, categoryName: targetCategory };
+           return fetch(`http://localhost:5070/api/restaurant/menu-items`, {
+             method: 'PUT',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(updatedDto),
+             credentials: 'include'
+           });
+        }));
+
+        // Then, delete the category itself
+        const res = await fetch(`http://localhost:5070/api/restaurant/categories/${id}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        
+        if (res.ok) {
+          setCategories(prev => prev.filter(c => c.id !== id));
+          // If targetCategory didn't exist in local state, we should ideally fetchCategories. 
+          // But for now, we'll optimistically update the menuItems. The select dropdown allows any name.
+          setMenuItems(prev => prev.map(item => item.categoryName === name ? { ...item, categoryName: targetCategory } : item));
+          alert(`Successfully moved items and deleted "${name}"!`);
+        } else {
+          alert("Failed to delete category");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error moving items and deleting category");
+      }
+    } else {
+      let confirmMsg = `Are you sure you want to delete the empty category "${name}"?`;
+      if (!(await window.confirm(confirmMsg))) return;
+      
+      try {
+        const res = await fetch(`http://localhost:5070/api/restaurant/categories/${id}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        
+        if (res.ok) {
+          setCategories(prev => prev.filter(c => c.id !== id));
+        } else {
+          alert("Failed to delete category");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error deleting category");
+      }
     }
   };
 
@@ -453,7 +529,8 @@ const RestaurantDashboard = ({ onLogout }) => {
       description: item.description,
       price: item.price,
       categoryName: item.categoryName,
-      isAvailable: item.isAvailable ?? true
+      isAvailable: item.isAvailable ?? true,
+      isVeg: item.isVeg ?? true
     });
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -501,7 +578,7 @@ const RestaurantDashboard = ({ onLogout }) => {
           >
             Prev
           </button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+          {(() => { let pages = []; if (totalPages <= 3) pages = Array.from({ length: totalPages }, (_, i) => i + 1); else if (currentPage === 1) pages = [1, 2, 3]; else if (currentPage === totalPages) pages = [totalPages - 2, totalPages - 1, totalPages]; else pages = [currentPage - 1, currentPage, currentPage + 1]; return pages; })().map(p => (
             <button 
               key={p}
               onClick={() => onPageChange(p)}
@@ -517,6 +594,7 @@ const RestaurantDashboard = ({ onLogout }) => {
           >
             Next
           </button>
+
         </div>
       </div>
     );
@@ -551,6 +629,7 @@ const RestaurantDashboard = ({ onLogout }) => {
             { id: 'menu', icon: '🍴', label: 'Menu Editor' },
             { id: 'history', icon: '📜', label: 'History' },
             { id: 'offers', icon: '🏷️', label: 'Offers / Coupons' },
+            { id: 'wallet', icon: '💳', label: 'Wallet' },
             { id: 'settings', icon: '⚙️', label: 'Settings' }
           ].map(item => (
             <button key={item.id} onClick={() => setActiveTab(item.id)} className={`sidebar-btn ${activeTab === item.id ? 'active' : ''}`}>
@@ -564,7 +643,7 @@ const RestaurantDashboard = ({ onLogout }) => {
       </aside>
 
       {/* Main Content */}
-      <main style={{ marginLeft: '280px', flex: 1, padding: '60px 80px' }}>
+      <main style={{ marginLeft: '280px', flex: 1, minWidth: 0, padding: '60px 80px' }}>
         
         {activeTab === 'overview' && (
           <div className="tab-content">
@@ -708,22 +787,26 @@ const RestaurantDashboard = ({ onLogout }) => {
           <div className="tab-content">
              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <h2 style={{ fontSize: '2.5rem', fontWeight: '800' }}>Menu Editor</h2>
-                <button onClick={() => { setEditingItem({}); setNewItem({ name: '', description: '', price: '', categoryName: '', isAvailable: true }); setSelectedFile(null); setPreviewUrl(null); }} style={{ padding: '16px 32px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>+ Add Item</button>
+                <button onClick={() => { setEditingItem({}); setNewItem({ name: '', description: '', price: '', categoryName: '', isAvailable: true, isVeg: true }); setSelectedFile(null); setPreviewUrl(null); }} style={{ padding: '16px 32px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>+ Add Item</button>
              </div>
              
              {/* Categories Filter/Management Row */}
              {categories && categories.length > 0 && (
-               <div style={{ marginBottom: '40px' }}>
+               <div style={{ marginBottom: '40px', width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
                  <p style={{ color: '#888', fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>Your Custom Categories</p>
-                 <div className="no-scrollbar" style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '10px' }}>
-                   {categories.map(cat => (
-                     <div key={cat.id} style={{ display: 'flex', alignItems: 'center', background: 'rgba(239, 159, 39, 0.1)', border: '1px solid rgba(239, 159, 39, 0.3)', borderRadius: '20px', padding: '8px 16px', gap: '10px' }}>
-                       <span style={{ color: '#ef9f27', fontWeight: '700', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>{cat.name}</span>
-                       <button onClick={() => handleDeleteCategory(cat.id, cat.name)} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '50%', fontSize: '1rem', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'} title="Delete Category">
-                         ×
-                       </button>
-                     </div>
-                   ))}
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                   <button onClick={() => document.getElementById('category-scroll-container').scrollBy({ left: -250, behavior: 'smooth' })} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#888', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '900' }}>{'<'}</button>
+                   <div id="category-scroll-container" className="no-scrollbar" style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '0', scrollBehavior: 'smooth', flex: 1, minWidth: 0 }}>
+                     {categories.map(cat => (
+                       <div key={cat.id} style={{ display: 'flex', alignItems: 'center', background: 'rgba(239, 159, 39, 0.1)', border: '1px solid rgba(239, 159, 39, 0.3)', borderRadius: '20px', padding: '8px 16px', gap: '10px' }}>
+                         <span style={{ color: '#ef9f27', fontWeight: '700', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>{cat.name}</span>
+                         <button onClick={() => handleDeleteCategory(cat.id, cat.name)} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '50%', fontSize: '1rem', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.2)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'} title="Delete Category">
+                           ×
+                         </button>
+                       </div>
+                     ))}
+                   </div>
+                   <button onClick={() => document.getElementById('category-scroll-container').scrollBy({ left: 250, behavior: 'smooth' })} style={{ background: 'rgba(239, 159, 39, 0.1)', border: '1px solid rgba(239, 159, 39, 0.3)', color: '#ef9f27', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '900' }}>{'>'}</button>
                  </div>
                </div>
              )}
@@ -745,6 +828,13 @@ const RestaurantDashboard = ({ onLogout }) => {
                                <button onClick={() => handleEditClick(item)} style={{ padding: '8px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer' }}>Edit</button>
                                <button onClick={() => handleDeleteItem(item.id)} style={{ padding: '8px 16px', borderRadius: '10px', background: 'rgba(255,0,0,0.1)', color: '#ff4d4d', border: 'none', cursor: 'pointer' }}>Delete</button>
                             </div>
+                         </div>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(255,255,255,0.02)', padding: '16px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '20px' }}>
+                           <span style={{ fontSize: '1.2rem' }}>{item.isVeg ? '🥗' : '🥩'}</span>
+                           <div style={{ flex: 1 }}>
+                             <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: item.isVeg ? '#2ecc71' : '#e74c3c' }}>{item.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}</h4>
+                             <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>{item.isVeg ? 'Dietary tag' : 'Dietary tag'}</p>
+                           </div>
                          </div>
                       </div>
                    </div>
@@ -768,6 +858,41 @@ const RestaurantDashboard = ({ onLogout }) => {
                       <textarea value={profile.description} onChange={e => setProfile({...profile, description: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff', minHeight: '100px' }} />
                    </div>
                    
+                   <div style={{ display: 'flex', gap: '20px' }}>
+                     <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Contact Number</label>
+                        <input value={profile.contactNumber || ''} placeholder="e.g. +1 234 567 890" onChange={e => setProfile({...profile, contactNumber: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
+                     </div>
+                   </div>
+                   
+                   <div>
+                      <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Full Physical Address</label>
+                      <input value={profile.address || ''} placeholder="e.g. 123 Main St, City" onChange={e => setProfile({...profile, address: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
+                   </div>
+                   
+                   <div>
+                      <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Location (Click on map to auto-fill address)</label>
+                      <LocationPicker 
+                        lat={profile.latitude} 
+                        lng={profile.longitude} 
+                        onLocationSelect={handleLocationSelect}
+                      />
+                   </div>
+                   <div style={{ display: 'flex', gap: '20px' }}>
+                     <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Latitude</label>
+                        <input value={profile.latitude} placeholder="e.g. 11.1202° N" onChange={e => setProfile({...profile, latitude: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
+                     </div>
+                     <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Longitude</label>
+                        <input value={profile.longitude} placeholder="e.g. 76.1200° E" onChange={e => setProfile({...profile, longitude: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
+                     </div>
+                   </div>
+                   <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                      <input type="checkbox" checked={profile.isOpen} onChange={e => setProfile({...profile, isOpen: e.target.checked})} />
+                      <label>Store is Open & Accepting Orders</label>
+                   </div>
+
                    <div>
                      <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Restaurant Display Image</label>
                      
@@ -808,28 +933,6 @@ const RestaurantDashboard = ({ onLogout }) => {
                          <span>📸</span> {profileImageFile ? 'Change Selected Image' : 'Upload Display Image'}
                        </label>
                      </div>
-                   </div>
-                   <div>
-                      <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Location (Click on map to update)</label>
-                      <LocationPicker 
-                        lat={profile.latitude} 
-                        lng={profile.longitude} 
-                        onLocationSelect={(lat, lng) => setProfile({...profile, latitude: lat, longitude: lng})}
-                      />
-                   </div>
-                   <div style={{ display: 'flex', gap: '20px' }}>
-                     <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Latitude</label>
-                        <input value={profile.latitude} placeholder="e.g. 11.1202° N" onChange={e => setProfile({...profile, latitude: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                     </div>
-                     <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', color: '#666', fontSize: '0.9rem', marginBottom: '8px' }}>Longitude</label>
-                        <input value={profile.longitude} placeholder="e.g. 76.1200° E" onChange={e => setProfile({...profile, longitude: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }} />
-                     </div>
-                   </div>
-                   <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                      <input type="checkbox" checked={profile.isOpen} onChange={e => setProfile({...profile, isOpen: e.target.checked})} />
-                      <label>Store is Open & Accepting Orders</label>
                    </div>
                    <button type="submit" disabled={isSavingProfile} style={{ padding: '18px', borderRadius: '16px', background: '#ef9f27', border: 'none', color: '#000', fontWeight: '800', cursor: 'pointer' }}>
                      {isSavingProfile ? 'Saving...' : 'Save Settings'}
@@ -980,6 +1083,13 @@ const RestaurantDashboard = ({ onLogout }) => {
             </div>
           </div>
         )}
+        
+        {activeTab === 'wallet' && (
+          <div className="tab-content" style={{ maxWidth: '1000px', margin: '0 auto' }}>
+            <h2 style={{ fontSize: '2.5rem', fontWeight: '900', marginBottom: '30px', color: '#fff', letterSpacing: '-1px' }}>Your Wallet</h2>
+            <WalletView role="restaurant" />
+          </div>
+        )}
       </main>
 
       {/* Add/Edit Item Modal */}
@@ -1002,7 +1112,7 @@ const RestaurantDashboard = ({ onLogout }) => {
                  
                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                    <div>
-                     <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Price ($)</label>
+                     <label style={{ display: 'block', fontSize: '0.85rem', color: '#aaa', fontWeight: '600', marginBottom: '8px' }}>Price (₹)</label>
                      <input placeholder="0.00" type="number" step="0.01" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '1rem' }} />
                    </div>
                    
@@ -1011,7 +1121,8 @@ const RestaurantDashboard = ({ onLogout }) => {
                       <select 
                         value={newItem.categoryName} 
                         onChange={e => setNewItem({...newItem, categoryName: e.target.value})} 
-                        style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: newItem.categoryName ? '#fff' : '#888', fontSize: '1rem', appearance: 'none', cursor: 'pointer' }}
+                        disabled={showNewCategoryInput}
+                        style={{ width: '100%', padding: '16px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', color: newItem.categoryName ? '#fff' : '#888', fontSize: '1rem', appearance: 'none', cursor: showNewCategoryInput ? 'not-allowed' : 'pointer', opacity: showNewCategoryInput ? 0.5 : 1 }}
                       >
                         <option value="" disabled>Select a category</option>
                         {Array.from(new Set([
@@ -1029,7 +1140,34 @@ const RestaurantDashboard = ({ onLogout }) => {
                       </div>
                    </div>
 
-                   <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', justifyContent: 'space-between' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(255,255,255,0.02)', padding: '16px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '20px' }}>
+                     <span style={{ fontSize: '1.2rem' }}>{newItem.isVeg ? '🥗' : '🥩'}</span>
+                     <div style={{ flex: 1 }}>
+                       <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: newItem.isVeg ? '#2ecc71' : '#e74c3c' }}>{newItem.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}</h4>
+                       <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>Toggle to set dietary tag</p>
+                     </div>
+                     <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px' }}>
+                       <input
+                         type="checkbox"
+                         checked={newItem.isVeg}
+                         onChange={e => setNewItem({...newItem, isVeg: e.target.checked})}
+                         style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                       />
+                       <span style={{
+                         position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                         backgroundColor: newItem.isVeg ? '#2ecc71' : '#e74c3c',
+                         transition: '.4s', borderRadius: '34px', boxShadow: newItem.isVeg ? '0 0 10px rgba(46,204,113,0.5)' : '0 0 10px rgba(231,76,60,0.5)'
+                       }}>
+                         <span style={{
+                           position: 'absolute', height: '18px', width: '18px', left: '4px', bottom: '4px',
+                           backgroundColor: '#fff', transition: '.4s', borderRadius: '50%',
+                           transform: newItem.isVeg ? 'translateX(24px)' : 'translateX(0)'
+                         }}></span>
+                       </span>
+                     </label>
+                   </div>
+                   
+                   <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', justifyContent: 'space-between', marginTop: '16px' }}>
                       <span style={{ color: '#fff', fontSize: '0.95rem', fontWeight: '600' }}>Item is currently available</span>
                       <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer', margin: 0 }}>
                         <input 

@@ -37,6 +37,16 @@ namespace DineDrop.API.Controllers
             return Ok(await _userService.GetRestaurantMenuAsync(id));
         }
 
+        [HttpPost("restaurants/{id}/rate")]
+        [Authorize]
+        public async Task<IActionResult> RateRestaurant(Guid id, [FromBody] RateRestaurantDto dto)
+        {
+            var userId = GetUserId();
+            var success = await _userService.RateRestaurantAsync(userId, id, dto);
+            if (success) return Ok(new { message = "Rating submitted successfully" });
+            return BadRequest(new { message = "Failed to submit rating." });
+        }
+
         [Authorize]
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
@@ -133,6 +143,15 @@ namespace DineDrop.API.Controllers
             return Ok(new { message = $"Successfully added ₹{dto.Amount:F2} to wallet.", newBalance });
         }
         
+        [Authorize]
+        [HttpGet("wallet/details")]
+        public async Task<IActionResult> GetWalletDetails()
+        {
+            var userId = GetUserId();
+            var details = await _userService.GetWalletDetailsAsync(userId);
+            return Ok(details);
+        }
+
         private string ComputeHmacSha256(string payload, string secret)
         {
             using (var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(secret)))

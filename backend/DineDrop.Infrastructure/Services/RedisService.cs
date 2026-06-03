@@ -89,7 +89,7 @@ namespace DineDrop.Infrastructure.Services
         {
             var hashEntries = await _db.HashGetAllAsync("rescue_deals");
             var activeDeals = new List<string>();
-            var now = DateTime.UtcNow;
+            var now = DateTime.UtcNow.AddHours(5).AddMinutes(30);
 
             foreach (var entry in hashEntries)
             {

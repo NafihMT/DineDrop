@@ -14,10 +14,12 @@ namespace DineDrop.API.Controllers
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;
+        private readonly DineDrop.Application.Modules.Users.Interfaces.IUserService _userService;
 
-        public AdminController(IAdminService adminService)
+        public AdminController(IAdminService adminService, DineDrop.Application.Modules.Users.Interfaces.IUserService userService)
         {
             _adminService = adminService;
+            _userService = userService;
         }
 
         [HttpGet("pending-restaurants")]
@@ -90,6 +92,15 @@ namespace DineDrop.API.Controllers
         {
             await _adminService.ToggleDriverBlockAsync(userId);
             return Ok(new { message = "Driver status updated." });
+        }
+
+        [HttpGet("wallet/details")]
+        public async Task<IActionResult> GetAdminWalletDetails()
+        {
+            // Admin wallet is tied to the main Admin User Id
+            var adminId = Guid.Parse("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b");
+            var details = await _userService.GetWalletDetailsAsync(adminId);
+            return Ok(details);
         }
     }
 }

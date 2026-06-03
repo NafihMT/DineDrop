@@ -10,6 +10,7 @@ namespace DineDrop.Application.Modules.Users.DTOs
         public Guid? AddressId { get; set; }
         public List<OrderItemCreateDto> Items { get; set; } = new();
         public string? CouponCode { get; set; }
+        public string PaymentMethod { get; set; } = "Wallet";
     }
 
     public class OrderItemCreateDto
@@ -58,6 +59,12 @@ namespace DineDrop.Application.Modules.Users.DTOs
         public string RestaurantFeedback { get; set; } = string.Empty;
         public int DriverRating { get; set; }
         public string DriverFeedback { get; set; } = string.Empty;
+    }
+
+    public class RateRestaurantDto
+    {
+        public int Rating { get; set; }
+        public string Feedback { get; set; } = string.Empty;
     }
 
     public class CustomerOrderItemDto

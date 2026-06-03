@@ -51,7 +51,7 @@ namespace DineDrop.Infrastructure.Services
             {
                 UserId = user.Id,
                 Token = GenerateRefreshToken(),
-                ExpiryDate = DateTime.UtcNow.AddDays(7)
+                ExpiryDate = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7)
             };
 
             _context.RefreshTokens.Add(refreshToken);
@@ -116,7 +116,7 @@ namespace DineDrop.Infrastructure.Services
                 {
                     UserId = user.Id,
                     Token = GenerateRefreshToken(),
-                    ExpiryDate = DateTime.UtcNow.AddDays(7)
+                    ExpiryDate = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7)
                 };
 
                 _context.RefreshTokens.Add(refreshToken);
@@ -167,7 +167,7 @@ namespace DineDrop.Infrastructure.Services
             {
                 UserId = user.Id,
                 Token = GenerateRefreshToken(),
-                ExpiryDate = DateTime.UtcNow.AddDays(7)
+                ExpiryDate = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7)
             };
 
             _context.RefreshTokens.Add(refreshToken);
@@ -201,7 +201,7 @@ namespace DineDrop.Infrastructure.Services
             {
                 UserId = user.Id,
                 Token = GenerateRefreshToken(),
-                ExpiryDate = DateTime.UtcNow.AddDays(7)
+                ExpiryDate = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7)
             };
 
             _context.RefreshTokens.Add(refreshToken);
@@ -237,7 +237,7 @@ namespace DineDrop.Infrastructure.Services
                 throw new Exception("Security Breach Detected: This token has already been used. All sessions invalidated.");
             }
 
-            if (token.ExpiryDate < DateTime.UtcNow)
+            if (token.ExpiryDate < DateTime.UtcNow.AddHours(5).AddMinutes(30))
                 throw new Exception("Refresh token expired");
 
             token.IsRevoked = true;
@@ -246,7 +246,7 @@ namespace DineDrop.Infrastructure.Services
             {
                 UserId = token.UserId,
                 Token = GenerateRefreshToken(),
-                ExpiryDate = DateTime.UtcNow.AddDays(7)
+                ExpiryDate = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7)
             };
 
             _context.RefreshTokens.Add(newRefreshToken);
@@ -310,7 +310,7 @@ namespace DineDrop.Infrastructure.Services
             {
                 UserId = user.Id,
                 Token = GenerateRefreshToken(),
-                ExpiryDate = DateTime.UtcNow.AddDays(7)
+                ExpiryDate = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddDays(7)
             };
 
             _context.RefreshTokens.Add(refreshToken);

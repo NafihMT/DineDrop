@@ -1,4 +1,4 @@
-﻿using DineDrop.Application.Modules.Restaurants.DTOs;
+using DineDrop.Application.Modules.Restaurants.DTOs;
 using DineDrop.Application.Modules.Restaurants.Interfaces;
 using DineDrop.Domain.Enums;
 using DineDrop.Infrastructure.Data;
@@ -20,7 +20,7 @@ namespace DineDrop.Infrastructure.Services
         }
         public async Task<EarningsDto> GetEarningsAsync(Guid userId)
         {
-            var now = DateTime.UtcNow;
+            var now = DateTime.UtcNow.AddHours(5).AddMinutes(30);
             var today = now.Date;
             var sevenDaysAgo = now.AddDays(-7);
             var thirtyDaysAgo = now.AddDays(-30);

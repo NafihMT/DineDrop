@@ -1,4 +1,4 @@
-﻿using DineDrop.Domain.Enums;
+using DineDrop.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;

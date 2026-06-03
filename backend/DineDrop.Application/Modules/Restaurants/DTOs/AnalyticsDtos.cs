@@ -1,4 +1,4 @@
-﻿
+
 namespace DineDrop.Application.Modules.Restaurants.DTOs
 {
     public class EarningsDto

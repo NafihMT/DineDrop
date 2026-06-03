@@ -10,6 +10,10 @@ const AdminDashboard = ({ onLogout }) => {
   }, [activeTab]);
   const [stats, setStats] = useState({ totalRestaurants: 0, pendingRequests: 0, totalUsers: 0, activeOrders: 0, totalRevenue: 0, totalDrivers: 0, pendingDrivers: 0 });
   const [pendingRequests, setPendingRequests] = useState([]);
+  const [offers, setOffers] = useState([]);
+  const [newOffer, setNewOffer] = useState({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' });
+  const [showOfferForm, setShowOfferForm] = useState(false);
+  const [offerFilter, setOfferFilter] = useState('All');
   const [restaurants, setRestaurants] = useState([]);
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -43,6 +47,8 @@ const AdminDashboard = ({ onLogout }) => {
       fetchOrders();
     } else if (activeTab === 'Drivers') {
       fetchDrivers();
+    } else if (activeTab === 'Offers') {
+      fetchOffers();
     }
   }, [activeTab]);
 
@@ -138,6 +144,54 @@ const AdminDashboard = ({ onLogout }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchOffers = async () => {
+    try {
+      const response = await fetch('http://localhost:5070/api/offer', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setOffers(data);
+      }
+    } catch (err) { console.error('Failed to fetch offers', err); }
+  };
+
+  const handleCreateOffer = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { code: newOffer.code, type: newOffer.isPercentage ? 0 : 1, value: parseFloat(newOffer.discountAmount), minOrderAmount: parseFloat(newOffer.minimumOrderValue || '0'), expiryDate: newOffer.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() };
+      const isEdit = newOffer.id != null;
+      const url = isEdit ? `http://localhost:5070/api/offer/${newOffer.id}` : 'http://localhost:5070/api/offer';
+      const response = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        setShowOfferForm(false);
+        setNewOffer({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' });
+        fetchOffers();
+      } else {
+        const errText = await response.text();
+        try { const err = JSON.parse(errText); alert(err.message || 'Failed to create offer'); } catch { alert(errText); }
+      }
+    } catch (err) { console.error('Error saving offer', err); }
+  };
+
+  const toggleOfferStatus = async (offerId) => {
+    try {
+      const response = await fetch(`http://localhost:5070/api/offer/toggle/${offerId}`, { method: 'POST', credentials: 'include' });
+      if (response.ok) fetchOffers();
+    } catch (err) { console.error('Error toggling offer', err); }
+  };
+
+  const deleteOffer = async (offerId) => {
+    if (!(await window.confirm("Are you sure you want to delete this offer?"))) return;
+    try {
+      const response = await fetch(`http://localhost:5070/api/offer/${offerId}`, { method: 'DELETE', credentials: 'include' });
+      if (response.ok) fetchOffers();
+    } catch (err) { console.error('Error deleting offer', err); }
   };
 
   const handleApproval = async (userId, isApproved) => {
@@ -283,7 +337,7 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#050505', color: '#fff', fontFamily: 'Outfit, sans-serif' }}>
       {/* Sidebar */}
       <aside style={{ width: '280px', borderRight: '1px solid rgba(255,255,255,0.05)', padding: '40px 24px', display: 'flex', flexDirection: 'column', gap: '40px', background: '#0a0a0a' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '12px' }}>
@@ -298,6 +352,7 @@ const AdminDashboard = ({ onLogout }) => {
             { id: 'Users', icon: '👥', label: 'Users' },
             { id: 'Orders', icon: '📦', label: 'Orders' },
             { id: 'Drivers', icon: '🛵', label: 'Drivers', badge: stats.pendingDrivers },
+            { id: 'Offers', icon: '🏷️', label: 'Offers / Coupons' },
           ].map((item) => (
             <button
               key={item.id}
@@ -743,6 +798,141 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
           );
         })()}
+
+        {activeTab === 'Offers' && (
+          <div className="fade-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+              <div>
+                <h2 style={{ fontSize: '2.5rem', fontWeight: '900', color: '#fff', marginBottom: '8px' }}>Offers & Coupons</h2>
+                <p style={{ color: '#aaa' }}>Manage global promotional codes for all users.</p>
+              </div>
+              <button onClick={() => { setNewOffer({ id: null, code: '', discountAmount: '', isPercentage: false, minimumOrderValue: '', expiresAt: '' }); setShowOfferForm(!showOfferForm); }} className="neon-btn" style={{ padding: '12px 24px', borderRadius: '16px', fontWeight: '800', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {showOfferForm ? '✕ Cancel' : '+ Add New Offer'}
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
+              {showOfferForm && (
+                <div className="glass card" style={{ padding: '32px', borderRadius: '24px', animation: 'slideDown 0.3s ease-out' }}>
+                  <h3 style={{ fontSize: '1.4rem', color: '#00f3ff', marginBottom: '24px', fontWeight: '800' }}>{newOffer.id ? 'Edit Offer' : 'Create Global Offer'}</h3>
+                  <form onSubmit={handleCreateOffer}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Coupon Code</label>
+                        <input type="text" placeholder="e.g. MEGA50" required value={newOffer.code} onChange={e => setNewOffer({...newOffer, code: e.target.value.toUpperCase()})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '1rem', textTransform: 'uppercase' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: '16px' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Discount Amount</label>
+                          <input type="number" step="0.01" required value={newOffer.discountAmount} onChange={e => {
+                            let val = e.target.value;
+                            if (newOffer.isPercentage && Number(val) > 100) val = '100';
+                            if (!newOffer.isPercentage && Number(val) > 500) val = '500';
+                            setNewOffer({...newOffer, discountAmount: val});
+                          }} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '1rem' }} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '14px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontWeight: '600' }}>
+                            <input type="checkbox" checked={newOffer.isPercentage} onChange={e => {
+                              let amount = newOffer.discountAmount;
+                              if (e.target.checked && Number(amount) > 100) amount = '100';
+                              if (!e.target.checked && Number(amount) > 500) amount = '500';
+                              setNewOffer({...newOffer, isPercentage: e.target.checked, discountAmount: amount});
+                            }} style={{ width: '18px', height: '18px', accentColor: '#00f3ff' }} />
+                            Is Percentage (%)
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Min Order Value (Optional)</label>
+                        <input type="number" step="0.01" placeholder="0.00" value={newOffer.minimumOrderValue} onChange={e => setNewOffer({...newOffer, minimumOrderValue: e.target.value})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '1rem' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#888', fontSize: '0.9rem', fontWeight: '600' }}>Expires At (Optional)</label>
+                        <input type="datetime-local" value={newOffer.expiresAt} onChange={e => setNewOffer({...newOffer, expiresAt: e.target.value})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '1rem', colorScheme: 'dark' }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
+                      <button type="button" onClick={() => setShowOfferForm(false)} style={{ padding: '14px 24px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
+                      <button type="submit" className="neon-btn" style={{ padding: '14px 32px', borderRadius: '12px', fontWeight: '800' }}>Save Global Offer</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '1.4rem', color: '#fff', margin: 0, fontWeight: '800' }}>Active Offers</h3>
+                  <div style={{ display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '6px', borderRadius: '12px' }}>
+                    {['All', 'Admin', 'Restaurant'].map(filter => (
+                      <button key={filter} onClick={() => setOfferFilter(filter)} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: offerFilter === filter ? '#00f3ff' : 'transparent', color: offerFilter === filter ? '#000' : '#888', fontWeight: '800', cursor: 'pointer', transition: 'all 0.2s' }}>
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {offers.filter(o => {
+                  const matchFilter = offerFilter === 'All' ? true : (offerFilter === 'Admin' ? o.createdBy === 'Platform' : o.createdBy === 'Restaurant');
+                  const matchSearch = o.code.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                      (o.restaurantName && o.restaurantName.toLowerCase().includes(searchQuery.toLowerCase()));
+                  return matchFilter && matchSearch;
+                }).length === 0 ? (
+                  <div className="glass" style={{ padding: '40px', textAlign: 'center', borderRadius: '16px', color: '#888' }}>No offers found matching this filter and search.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {offers.filter(o => {
+                      const matchFilter = offerFilter === 'All' ? true : (offerFilter === 'Admin' ? o.createdBy === 'Platform' : o.createdBy === 'Restaurant');
+                      const matchSearch = o.code.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                          (o.restaurantName && o.restaurantName.toLowerCase().includes(searchQuery.toLowerCase()));
+                      return matchFilter && matchSearch;
+                    }).map(offer => (
+                      <div key={offer.id} className="glass" style={{ padding: '24px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: offer.isActive ? '4px solid #00f3ff' : '4px solid #444', opacity: offer.isActive ? 1 : 0.6 }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                            <h4 style={{ color: '#fff', fontSize: '1.4rem', margin: 0, letterSpacing: '1px', fontWeight: '900' }}>{offer.code}</h4>
+                            {offer.createdBy === 'Platform' ? (
+                              <span style={{ background: 'rgba(0,243,255,0.1)', color: '#00f3ff', padding: '4px 8px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase' }}>Platform</span>
+                            ) : (
+                              <span style={{ background: 'rgba(239, 159, 39, 0.1)', color: '#EF9F27', padding: '4px 8px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase' }}>{offer.restaurantName || 'Restaurant'}</span>
+                            )}
+                          </div>
+                          <p style={{ color: '#aaa', margin: '0 0 4px 0', fontSize: '0.9rem' }}>
+                            Discount: <span style={{ color: '#00f3ff', fontWeight: '800' }}>{offer.type === 0 ? `${offer.value}%` : `₹${offer.value}`}</span>
+                          </p>
+                          <p style={{ color: '#888', margin: 0, fontSize: '0.85rem', fontWeight: '600' }}>Min Order: ₹{offer.minOrderAmount}</p>
+                        </div>
+                        {offer.createdBy === 'Platform' ? (
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <button onClick={() => {
+                              setNewOffer({ id: offer.id, code: offer.code, discountAmount: offer.value, isPercentage: offer.type === 0, minimumOrderValue: offer.minOrderAmount, expiresAt: offer.expiryDate ? new Date(offer.expiryDate).toISOString().slice(0, 16) : '' });
+                              setShowOfferForm(true);
+                            }} style={{ padding: '10px 20px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}>
+                              Edit
+                            </button>
+                            <button onClick={() => toggleOfferStatus(offer.id)} style={{ padding: '10px 20px', borderRadius: '12px', background: offer.isActive ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255,255,255,0.05)', color: offer.isActive ? '#00f3ff' : '#fff', border: offer.isActive ? '1px solid rgba(0, 243, 255, 0.3)' : '1px solid rgba(255,255,255,0.1)', fontWeight: '700', cursor: 'pointer' }}>
+                              {offer.isActive ? 'Active' : 'Inactive'}
+                            </button>
+                            <button onClick={() => deleteOffer(offer.id)} style={{ padding: '10px 20px', borderRadius: '12px', background: 'rgba(255, 77, 77, 0.1)', color: '#ff4d4d', border: '1px solid rgba(255, 77, 77, 0.2)', fontWeight: '700', cursor: 'pointer' }}>
+                              Delete
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            <span style={{ padding: '10px 20px', borderRadius: '12px', background: offer.isActive ? 'rgba(0, 243, 255, 0.05)' : 'rgba(255,255,255,0.02)', color: offer.isActive ? 'rgba(0, 243, 255, 0.6)' : '#666', border: '1px solid transparent', fontWeight: '700' }}>
+                              {offer.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -125,7 +125,7 @@ namespace DineDrop.Infrastructure.Services
                 throw new Exception("Cannot change the status of a completed or cancelled order.");
 
             order.Status = dto.NewStatus;
-            order.UpdatedAt = DateTime.UtcNow;
+            order.UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30);
 
             if (dto.NewStatus == OrderStatus.Cancelled)
             {
@@ -244,7 +244,7 @@ namespace DineDrop.Infrastructure.Services
             var restaurant = await _context.Restaurants.FirstOrDefaultAsync(r => r.OwnerId == userId);
             if (restaurant == null) throw new Exception("Restaurant not found");
 
-            var today = DateTime.UtcNow.Date;
+            var today = DateTime.UtcNow.AddHours(5).AddMinutes(30).Date;
             var orders = await _context.Orders
                 .Where(o => o.RestaurantId == restaurant.Id)
                 .ToListAsync();

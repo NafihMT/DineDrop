@@ -279,6 +279,7 @@ namespace DineDrop.Infrastructure.Services
             var order = await _context.Orders
                 .Include(o => o.Restaurant)
                 .Include(o => o.Offer)
+                .Include(o => o.OrderItems)
                 .FirstOrDefaultAsync(o => o.Id == orderId && o.DriverId == driver.Id);
             if (order == null || order.Status != OrderStatus.Picked) return false;
 
@@ -298,28 +299,87 @@ namespace DineDrop.Infrastructure.Services
 
             order.Status = OrderStatus.Delivered;
 
-            // Credit driver's wallet with the delivery fee
+            // 1. Calculate the exact revenue splits
+            decimal subtotalBeforeDiscount = order.OrderItems.Sum(oi => oi.UnitPrice * oi.Quantity);
+            decimal subtotal = subtotalBeforeDiscount - order.DiscountAmount;
+            
+            // Commission should be calculated on the original amount before discount
+            decimal adminCommission = Math.Round(subtotalBeforeDiscount * 0.15m, 2);
+            decimal gstOnFood = Math.Round(subtotal * 0.05m, 2);
+            
+            // Base earnings for restaurant assuming they don't bear the discount
+            decimal restaurantEarnings = subtotalBeforeDiscount - adminCommission + gstOnFood;
+
+            // If coupon was created by the Restaurant, the Restaurant bears the cost of discount.
+            if (order.Offer != null && order.Offer.CreatedBy == "Restaurant")
+            {
+                restaurantEarnings -= order.DiscountAmount;
+            }
+
+            var adminId = Guid.Parse("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b");
+            var adminWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == adminId);
+            if (adminWallet == null)
+            {
+                adminWallet = new Domain.Entities.Wallet { UserId = adminId, Balance = 0.00m };
+                _context.Wallets.Add(adminWallet);
+            }
+
             var driverWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
             if (driverWallet == null)
             {
                 driverWallet = new Domain.Entities.Wallet { UserId = userId, Balance = 0.00m };
                 _context.Wallets.Add(driverWallet);
             }
-            driverWallet.Balance += order.DeliveryFee;
 
-            // Create ledger entry
-            var ledger = new Domain.Entities.LedgerEntry
+            // 2. Handle Driver Payout and COD Cash Collection
+            if (order.PaymentMethod == PaymentMethod.COD)
             {
-                EntityId = userId,
-                EntityType = Domain.Enums.LedgerEntityType.Driver,
-                Type = Domain.Enums.LedgerType.Credit,
-                Amount = order.DeliveryFee,
-                OrderId = order.Id,
-                Description = $"Earnings for delivery of order #{order.Id.ToString().Substring(0, 8)}"
-            };
-            _context.LedgerEntries.Add(ledger);
+                // Driver collected Cash. They owe Admin (TotalAmount - DeliveryFee)
+                decimal amountOwedToAdmin = order.TotalAmount - order.DeliveryFee;
+                driverWallet.Balance -= amountOwedToAdmin;
+                adminWallet.Balance += amountOwedToAdmin;
 
-            // Credit restaurant owner with the food revenue
+                var driverLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = userId,
+                    EntityType = Domain.Enums.LedgerEntityType.Driver,
+                    Type = Domain.Enums.LedgerType.Debit,
+                    Amount = amountOwedToAdmin,
+                    OrderId = order.Id,
+                    Description = $"Remitted COD cash to Admin for order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(driverLedger);
+            }
+            else
+            {
+                // Admin already has the money. Admin pays Driver the DeliveryFee.
+                adminWallet.Balance -= order.DeliveryFee;
+                driverWallet.Balance += order.DeliveryFee;
+
+                var driverLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = userId,
+                    EntityType = Domain.Enums.LedgerEntityType.Driver,
+                    Type = Domain.Enums.LedgerType.Credit,
+                    Amount = order.DeliveryFee,
+                    OrderId = order.Id,
+                    Description = $"Earnings for delivery of order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(driverLedger);
+
+                var adminDriverPayoutLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = adminId,
+                    EntityType = Domain.Enums.LedgerEntityType.Admin,
+                    Type = Domain.Enums.LedgerType.Debit,
+                    Amount = order.DeliveryFee,
+                    OrderId = order.Id,
+                    Description = $"Payout to Driver for order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(adminDriverPayoutLedger);
+            }
+
+            // 3. Pay Restaurant from Admin Wallet
             if (order.Restaurant != null)
             {
                 var restaurantOwnerId = order.Restaurant.OwnerId;
@@ -330,20 +390,9 @@ namespace DineDrop.Infrastructure.Services
                     _context.Wallets.Add(restOwnerWallet);
                 }
 
-                // Subtotal before coupon discount = TotalAmount - DeliveryFee + DiscountAmount
-                decimal subtotalBeforeDiscount = order.TotalAmount - order.DeliveryFee + order.DiscountAmount;
-                decimal restaurantEarnings = subtotalBeforeDiscount;
-
-                // If coupon was created by the Restaurant, the Restaurant bears the cost of discount.
-                // If coupon was created by Platform (or there is no coupon), the Restaurant gets full subtotal.
-                if (order.Offer != null && order.Offer.CreatedBy == "Restaurant")
-                {
-                    restaurantEarnings = subtotalBeforeDiscount - order.DiscountAmount;
-                }
-
                 restOwnerWallet.Balance += restaurantEarnings;
+                adminWallet.Balance -= restaurantEarnings;
 
-                // Create restaurant owner ledger entry
                 var restLedger = new Domain.Entities.LedgerEntry
                 {
                     EntityId = restaurantOwnerId,
@@ -351,11 +400,20 @@ namespace DineDrop.Infrastructure.Services
                     Type = Domain.Enums.LedgerType.Credit,
                     Amount = restaurantEarnings,
                     OrderId = order.Id,
-                    Description = order.Offer != null 
-                        ? $"Earnings for order #{order.Id.ToString().Substring(0, 8)} (Applied Coupon {order.Offer.Code} - Sponsored by {order.Offer.CreatedBy})"
-                        : $"Earnings for order #{order.Id.ToString().Substring(0, 8)}"
+                    Description = $"Earnings for order #{order.Id.ToString().Substring(0, 8)} (Less 15% commission)"
                 };
                 _context.LedgerEntries.Add(restLedger);
+
+                var adminRestPayoutLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = adminId,
+                    EntityType = Domain.Enums.LedgerEntityType.Admin,
+                    Type = Domain.Enums.LedgerType.Debit,
+                    Amount = restaurantEarnings,
+                    OrderId = order.Id,
+                    Description = $"Payout to Restaurant for order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(adminRestPayoutLedger);
             }
 
             await _context.SaveChangesAsync();
@@ -387,7 +445,24 @@ namespace DineDrop.Infrastructure.Services
             var driver = await _context.Drivers
                 .Include(d => d.User)
                 .FirstOrDefaultAsync(d => d.UserId == userId);
-            if (driver == null) return false;
+            
+            if (driver == null)
+            {
+                driver = new Driver
+                {
+                    UserId = userId,
+                    IsAvailable = true,
+                    Rating = 5.0
+                };
+                _context.Drivers.Add(driver);
+                await _context.SaveChangesAsync();
+                
+                driver = await _context.Drivers
+                    .Include(d => d.User)
+                    .FirstOrDefaultAsync(d => d.UserId == userId);
+                    
+                if (driver == null) return false;
+            }
 
             // 1. Update live tracking position in Redis (Option B)
             await _redisService.UpdateDriverLocationAsync(driver.Id, latitude, longitude);
@@ -431,7 +506,7 @@ namespace DineDrop.Infrastructure.Services
                     DriverId = driver.Id,
                     Latitude = latitude,
                     Longitude = longitude,
-                    UpdatedAt = DateTime.UtcNow
+                    UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30)
                 };
                 _context.DriverLocations.Add(driverLoc);
             }
@@ -439,7 +514,7 @@ namespace DineDrop.Infrastructure.Services
             {
                 driverLoc.Latitude = latitude;
                 driverLoc.Longitude = longitude;
-                driverLoc.UpdatedAt = DateTime.UtcNow;
+                driverLoc.UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30);
             }
             await _context.SaveChangesAsync();
 
@@ -525,7 +600,7 @@ namespace DineDrop.Infrastructure.Services
                     CustomerName = o.User?.Name ?? "Customer",
                     TotalAmount = o.TotalAmount,
                     Earnings = o.DeliveryFee,
-                    DeliveredAt = o.UpdatedAt ?? DateTime.UtcNow,
+                    DeliveredAt = o.UpdatedAt ?? DateTime.UtcNow.AddHours(5).AddMinutes(30),
                     DriverRating = matchingRating?.Value,
                     DriverFeedback = matchingRating?.Comment
                 });

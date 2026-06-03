@@ -110,6 +110,46 @@ const HomePage = ({ onLogout }) => {
     localStorage.setItem('customer_active_tab', activeTab);
   }, [activeTab]); // browse, history, tracking
   const [myOrders, setMyOrders] = useState([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const itemsPerPage = 8;
+  const totalHistoryPages = Math.ceil(myOrders.length / itemsPerPage);
+  const paginatedHistory = myOrders.slice((historyPage - 1) * itemsPerPage, historyPage * itemsPerPage);
+
+  const Pagination = ({ currentPage, totalPages, onPageChange }) => {
+    if (totalPages <= 1) return null;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '32px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        <span style={{ color: '#888', fontSize: '0.9rem' }}>
+          Showing page <strong style={{ color: '#fff' }}>{currentPage}</strong> of <strong style={{ color: '#fff' }}>{totalPages}</strong>
+        </span>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            onClick={() => onPageChange(currentPage - 1)} 
+            disabled={currentPage === 1}
+            style={{ padding: '8px 16px', borderRadius: '12px', background: currentPage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)', color: currentPage === 1 ? '#666' : '#fff', border: 'none', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '0.9rem', transition: 'all 0.2s' }}
+          >
+            Prev
+          </button>
+          {(() => { let pages = []; if (totalPages <= 3) pages = Array.from({ length: totalPages }, (_, i) => i + 1); else if (currentPage === 1) pages = [1, 2, 3]; else if (currentPage === totalPages) pages = [totalPages - 2, totalPages - 1, totalPages]; else pages = [currentPage - 1, currentPage, currentPage + 1]; return pages; })().map(p => (
+            <button 
+              key={p}
+              onClick={() => onPageChange(p)}
+              style={{ width: '38px', height: '38px', borderRadius: '12px', background: currentPage === p ? '#00f3ff' : 'rgba(255,255,255,0.03)', color: currentPage === p ? '#000' : '#fff', border: currentPage === p ? 'none' : '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', fontWeight: '800', fontSize: '0.9rem', transition: 'all 0.2s' }}
+            >
+              {p}
+            </button>
+          ))}
+          <button 
+            onClick={() => onPageChange(currentPage + 1)} 
+            disabled={currentPage === totalPages}
+            style={{ padding: '8px 16px', borderRadius: '12px', background: currentPage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)', color: currentPage === totalPages ? '#666' : '#fff', border: 'none', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '0.9rem', transition: 'all 0.2s' }}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    );
+  };
   const [trackingOrder, setTrackingOrder] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [orderNotification, setOrderNotification] = useState(null);
@@ -145,6 +185,7 @@ const HomePage = ({ onLogout }) => {
 
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('Online'); // Online, Wallet, COD
   const [cartConflictModal, setCartConflictModal] = useState({ show: false, item: null, contextRest: null, dishContext: null });
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -219,10 +260,29 @@ const HomePage = ({ onLogout }) => {
   const [submittingRating, setSubmittingRating] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  const [browseRestRating, setBrowseRestRating] = useState(5);
+  const [browseRestFeedback, setBrowseRestFeedback] = useState('');
+  const [submittingBrowseRating, setSubmittingBrowseRating] = useState(false);
+  const [browseRatingSubmitted, setBrowseRatingSubmitted] = useState(false);
+  const [showBrowseRatingUI, setShowBrowseRatingUI] = useState(false);
+
   const [showMap, setShowMap] = useState(false);
   const [searchLocationText, setSearchLocationText] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 300) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const [toastMessage, setToastMessage] = useState(null);
   const showToast = (message) => {
@@ -414,6 +474,11 @@ const HomePage = ({ onLogout }) => {
       if (response.ok) {
         const data = await response.json();
         setRestaurants(data);
+        setSelectedRestaurant(prev => {
+          if (!prev) return null;
+          const updated = data.find(r => r.id === prev.id);
+          return updated || prev;
+        });
       }
     } catch (err) {
       console.error(err);
@@ -533,7 +598,7 @@ const HomePage = ({ onLogout }) => {
       return;
     }
 
-    if (!window.confirm("🔥 Confirm Flash Food Rescue Claim? The deal subtotal will be deducted from your DineDrop Wallet.")) return;
+    if (!(await window.confirm("🔥 Confirm Flash Food Rescue Claim? The deal subtotal will be deducted from your DineDrop Wallet."))) return;
 
     setIsPlacingOrder(true);
     try {
@@ -695,7 +760,7 @@ const HomePage = ({ onLogout }) => {
     if (status === 'Preparing' || status === 'Ready') {
       msg = "⚠️ This order is already prepared/preparing! Cancelling now will charge a 50% cancellation fee. You will receive a partial refund (50% subtotal + 100% delivery fee) to your wallet. Proceed?";
     }
-    if (!window.confirm(msg)) return;
+    if (!(await window.confirm(msg))) return;
     try {
       const response = await fetch(`http://localhost:5070/api/customer/orders/${orderId}/cancel`, {
         method: 'POST',
@@ -741,7 +806,7 @@ const HomePage = ({ onLogout }) => {
 
       // 2. Open Razorpay Checkout
       const options = {
-        key: "rzp_test_1234567890abcd", // Testing key matching backend
+        key: "rzp_test_SwdCmzSaHtuMRq", // Matching backend key
         amount: orderData.amount, // in subunits (paise)
         currency: "INR",
         name: "DineDrop",
@@ -825,8 +890,8 @@ const HomePage = ({ onLogout }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          restaurantRating: restRating,
-          restaurantFeedback: restFeedback,
+          restaurantRating: 0,
+          restaurantFeedback: "",
           driverRating: driverRating,
           driverFeedback: driverFeedback
         }),
@@ -846,6 +911,34 @@ const HomePage = ({ onLogout }) => {
       showToast("Error submitting rating: " + err.message);
     } finally {
       setSubmittingRating(false);
+    }
+  };
+
+  const handleRateRestaurant = async () => {
+    if (!selectedRestaurant) return;
+    setSubmittingBrowseRating(true);
+    try {
+      const response = await fetch(`http://localhost:5070/api/user/restaurants/${selectedRestaurant.id}/rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rating: browseRestRating,
+          feedback: browseRestFeedback
+        }),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        setBrowseRatingSubmitted(true);
+        showToast("Restaurant rating submitted!");
+        fetchRestaurants(); 
+      } else {
+        const err = await response.json();
+        showToast(err.message || "Failed to submit rating.");
+      }
+    } catch (err) {
+      showToast("Error submitting rating.");
+    } finally {
+      setSubmittingBrowseRating(false);
     }
   };
 
@@ -900,34 +993,136 @@ const HomePage = ({ onLogout }) => {
     }
     setIsPlacingOrder(true);
     try {
+      let dist = 5;
+      if (addressObj && targetRest) {
+        dist = getDistanceFromLatLonInKm(targetRest.latitude, targetRest.longitude, addressObj.latitude, addressObj.longitude);
+      }
+      const deliveryCharge = Math.max(5, Math.round(dist * 2));
+      const platformFee = 20.00;
+      const subtotal = Math.max(0, cartTotal - (appliedCoupon ? appliedCoupon.discountAmount : 0));
+      const gstOnFood = subtotal * 0.05;
+      const gstOnDeliveryAndPlatform = (platformFee + deliveryCharge) * 0.18;
+      const totalGst = gstOnFood + gstOnDeliveryAndPlatform;
+      const finalAmount = Math.max(0, subtotal + platformFee + deliveryCharge + totalGst);
+
       const orderDto = {
         restaurantId: targetRest.id,
         addressId: selectedDeliveryAddress,
         items: cart.map(i => ({ menuItemId: i.id, quantity: i.quantity })),
-        couponCode: appliedCoupon ? appliedCoupon.code : null
+        couponCode: appliedCoupon ? appliedCoupon.code : null,
+        paymentMethod: paymentMethod
       };
 
-      const response = await fetch('http://localhost:5070/api/customer/orders/place', {
+      if (paymentMethod === 'Wallet' || paymentMethod === 'COD') {
+        const placeResp = await fetch('http://localhost:5070/api/customer/orders/place', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderDto),
+          credentials: 'include'
+        });
+
+        if (placeResp.ok) {
+          const data = await placeResp.json();
+          setCart([]); setAppliedCoupon(null); setCouponCode('');
+          setSelectedRestaurant(null);
+          fetchMyOrders(false);
+          fetchOrderDetails(data.orderId);
+          fetchProfile();
+          showToast(`Order placed successfully using ${paymentMethod}!`);
+        } else {
+          const err = await placeResp.json();
+          showToast(err.message || `Failed to place order using ${paymentMethod}.`);
+        }
+        setIsPlacingOrder(false);
+        return;
+      }
+
+      // 1. Create Order on Backend for Razorpay amount
+      const rzpOrderResp = await fetch('http://localhost:5070/api/user/wallet/create-razorpay-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderDto),
+        body: JSON.stringify({ amount: finalAmount }),
         credentials: 'include'
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        setCart([]); setAppliedCoupon(null); setCouponCode('');
-        setSelectedRestaurant(null);
-        fetchMyOrders(false);
-        fetchOrderDetails(data.orderId);
-        fetchProfile();
-      } else {
-        const err = await response.json();
-        showToast(err.message || "Failed to place order.");
+      if (!rzpOrderResp.ok) {
+        showToast("Failed to initiate secure payment.");
+        setIsPlacingOrder(false);
+        return;
       }
+      const rzpOrderData = await rzpOrderResp.json();
+
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: "rzp_test_SwdCmzSaHtuMRq", // Matching backend key
+        amount: rzpOrderData.amount, // in paise
+        currency: "INR",
+        name: "DineDrop",
+        description: `Order from ${targetRest.name}`,
+        order_id: rzpOrderData.orderId,
+        handler: async function (response) {
+          try {
+            // 3a. Verify Payment to Top-Up Wallet
+            const verifyResp = await fetch('http://localhost:5070/api/user/wallet/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                amount: finalAmount,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              }),
+              credentials: 'include'
+            });
+
+            if (!verifyResp.ok) {
+              showToast("Payment verification failed. Order not placed.");
+              setIsPlacingOrder(false);
+              return;
+            }
+
+            // 3b. Payment Success - Place actual order
+            const placeResp = await fetch('http://localhost:5070/api/customer/orders/place', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(orderDto),
+              credentials: 'include'
+            });
+
+            if (placeResp.ok) {
+              const data = await placeResp.json();
+              setCart([]); setAppliedCoupon(null); setCouponCode('');
+              setSelectedRestaurant(null);
+              fetchMyOrders(false);
+              fetchOrderDetails(data.orderId);
+              fetchProfile();
+            } else {
+              const err = await placeResp.json();
+              showToast(err.message || "Failed to place order after payment.");
+            }
+          } catch (err) {
+            showToast("Error placing order: " + err.message);
+          } finally {
+            setIsPlacingOrder(false);
+          }
+        },
+        prefill: {
+          name: profileData?.name || "Customer",
+          contact: profileData?.mobileNumber || "9999999999"
+        },
+        theme: { color: "#00f3ff" },
+        modal: {
+          ondismiss: function() {
+            setIsPlacingOrder(false);
+            showToast("Payment cancelled.");
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+
     } catch (err) {
       showToast("Error: " + err.message);
-    } finally {
       setIsPlacingOrder(false);
     }
   };
@@ -1320,8 +1515,8 @@ const HomePage = ({ onLogout }) => {
                       <p style={{ color: '#666', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Loaded smoked brisket, caramelized ribs & sweet coleslaw.</p>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <span style={{ fontSize: '0.8rem', color: '#666', textDecoration: 'line-through', marginRight: '6px' }}>$34.00</span>
-                          <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#00f3ff' }}>$17.00</span>
+                          <span style={{ fontSize: '0.8rem', color: '#666', textDecoration: 'line-through', marginRight: '6px' }}>₹34.00</span>
+                          <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#00f3ff' }}>₹17.00</span>
                         </div>
                         <span style={{ fontSize: '1.5rem' }}>🥩</span>
                       </div>
@@ -1332,37 +1527,29 @@ const HomePage = ({ onLogout }) => {
                 </div>
 
                 {/* Promotional Deals Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '48px' }}>
-                  <div className="promo-card">
-                    <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>🎁</span>
-                    <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>50% OFF FIRST ORDER</h4>
-                    <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Get half off your entire checkout. Valid on orders from any restaurant.</p>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#00f3ff', fontWeight: '800', background: 'rgba(0, 243, 255, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(0, 243, 255, 0.15)' }}>DINE50</span>
-                      <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>New Users Only</span>
-                    </div>
+                {availableOffers && availableOffers.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginBottom: '48px' }}>
+                    {availableOffers.map((offer, index) => {
+                      const icons = ['🎁', '💳', '🛵', '🔥', '🌟'];
+                      const icon = icons[index % icons.length];
+                      return (
+                        <div key={offer.id || index} className="promo-card" style={{ background: 'rgba(10, 10, 10, 0.4)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(255,255,255,0.05)', transition: 'transform 0.2s', cursor: 'pointer' }} onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.border = '1px solid rgba(0, 243, 255, 0.3)'; }} onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.border = '1px solid rgba(255,255,255,0.05)'; }}>
+                          <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>{icon}</span>
+                          <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>
+                            {offer.type === 'Percentage' || offer.type === 0 ? `${offer.value}% OFF` : `FLAT ₹${offer.value} OFF`}
+                          </h4>
+                          <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>
+                            Get {offer.type === 'Percentage' || offer.type === 0 ? `${offer.value}%` : `₹${offer.value}`} off your entire order. Valid on orders above ₹{offer.minOrderAmount}.
+                          </p>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#00f3ff', fontWeight: '800', background: 'rgba(0, 243, 255, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(0, 243, 255, 0.15)' }}>{offer.code}</span>
+                            <span style={{ fontSize: '0.75rem', color: '#2ecc71', fontWeight: '600' }}>Active Offer</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-
-                  <div className="promo-card">
-                    <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>💳</span>
-                    <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>$10 WALLET BONUS</h4>
-                    <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Get an extra $10 added automatically when you add $50 or more to your wallet.</p>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#2ecc71', fontWeight: '800', background: 'rgba(46, 204, 113, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(46, 204, 113, 0.15)' }}>FEAST10</span>
-                      <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>Active Offer</span>
-                    </div>
-                  </div>
-
-                  <div className="promo-card">
-                    <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '12px' }}>🛵</span>
-                    <h4 style={{ fontSize: '1.05rem', fontWeight: '900', color: '#fff', marginBottom: '6px' }}>FREE DELIVERY</h4>
-                    <p style={{ color: '#aaa', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Enjoy zero delivery fees on orders above $30 from local top spots.</p>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#ffc800', fontWeight: '800', background: 'rgba(255, 200, 0, 0.08)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(255, 200, 0, 0.15)' }}>FREEDEL</span>
-                      <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: '600' }}>{"Orders > $30"}</span>
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Flash Food Rescue Deals Section */}
                 {rescueDeals && rescueDeals.length > 0 && (
@@ -1388,6 +1575,7 @@ const HomePage = ({ onLogout }) => {
                   </div>
                   <div className="no-scrollbar" style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px' }}>
                     {[
+                      { id: 'top-rated', name: 'Top Rated', icon: '⭐' },
                       { id: 'pizza', name: 'Pizza', icon: '🍕' },
                       { id: 'burger', name: 'Burger', icon: '🍔' },
                       { id: 'sushi', name: 'Sushi', icon: '🍣' },
@@ -1424,13 +1612,21 @@ const HomePage = ({ onLogout }) => {
 
                 {(() => {
                   const filteredList = restaurants
-                    .filter(r => selectedCategory ? (r.description && r.description.toLowerCase().includes(selectedCategory)) : true)
+                    .filter(r => {
+                      if (!selectedCategory) return true;
+                      if (selectedCategory === 'top-rated') return r.rating >= 4.0;
+                      return r.categories && r.categories.some(c => c.toLowerCase() === selectedCategory.toLowerCase());
+                    })
                     .filter(r => {
                       if (!nearbyOnly || !userLocation) return true;
                       const dist = getDistanceFromLatLonInKm(userLocation.lat, userLocation.lng, r.latitude, r.longitude);
                       return dist <= 30;
                     })
-                    .sort((a, b) => (b.rating || 0) - (a.rating || 0));
+                    .sort((a, b) => {
+                      if (a.isOpen && !b.isOpen) return -1;
+                      if (!a.isOpen && b.isOpen) return 1;
+                      return (b.rating || 0) - (a.rating || 0);
+                    });
 
                   if (filteredList.length === 0) {
                     return (
@@ -1457,29 +1653,31 @@ const HomePage = ({ onLogout }) => {
                             >
                               <div style={{
                                 height: '180px',
-                                background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.08), rgba(0, 112, 255, 0.03))',
+                                background: res.imageUrl ? `url(http://localhost:5070${res.imageUrl}) center/cover no-repeat` : 'linear-gradient(135deg, rgba(0, 243, 255, 0.08), rgba(0, 112, 255, 0.03))',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 borderBottom: '1px solid rgba(255,255,255,0.03)',
                                 position: 'relative'
                               }}>
-                                <div style={{
-                                  width: '80px',
-                                  height: '80px',
-                                  borderRadius: '50%',
-                                  background: 'rgba(5,5,5,0.85)',
-                                  border: '1px solid rgba(0, 243, 255, 0.25)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '2.5rem',
-                                  fontWeight: '900',
-                                  color: '#00f3ff',
-                                  boxShadow: '0 8px 25px rgba(0, 243, 255, 0.15)'
-                                }}>
-                                  {res.name.charAt(0)}
-                                </div>
+                                {!res.imageUrl && (
+                                  <div style={{
+                                    width: '80px',
+                                    height: '80px',
+                                    borderRadius: '50%',
+                                    background: 'rgba(5,5,5,0.85)',
+                                    border: '1px solid rgba(0, 243, 255, 0.25)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '2.5rem',
+                                    fontWeight: '900',
+                                    color: '#00f3ff',
+                                    boxShadow: '0 8px 25px rgba(0, 243, 255, 0.15)'
+                                  }}>
+                                    {res.name.charAt(0)}
+                                  </div>
+                                )}
                                 <span style={{
                                   position: 'absolute',
                                   top: '16px',
@@ -1566,7 +1764,7 @@ const HomePage = ({ onLogout }) => {
                   borderRadius: '28px',
                   padding: '40px',
                   marginBottom: '40px',
-                  background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.15), rgba(0, 112, 255, 0.05))',
+                  background: selectedRestaurant.imageUrl ? `linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.8)), url(http://localhost:5070${selectedRestaurant.imageUrl}) center/cover no-repeat` : 'linear-gradient(135deg, rgba(0, 243, 255, 0.15), rgba(0, 112, 255, 0.05))',
                   border: '1px solid rgba(0, 243, 255, 0.15)',
                   boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
                   display: 'flex',
@@ -1614,16 +1812,96 @@ const HomePage = ({ onLogout }) => {
                     </div>
                     <p style={{ color: '#aaa', fontSize: '1rem', marginTop: '8px', maxWidth: '600px', lineHeight: '1.5' }}>{selectedRestaurant.description}</p>
                     <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginTop: '16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(241, 196, 15, 0.1)', padding: '5px 12px', borderRadius: '10px', border: '1px solid rgba(241, 196, 15, 0.2)' }}>
+                      <div 
+                        onClick={() => setShowBrowseRatingUI(!showBrowseRatingUI)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(241, 196, 15, 0.1)', padding: '5px 12px', borderRadius: '10px', border: '1px solid rgba(241, 196, 15, 0.2)', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(241, 196, 15, 0.2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(241, 196, 15, 0.1)'}
+                      >
                         <span style={{ color: '#f1c40f', fontSize: '0.85rem' }}>⭐</span>
                         <span style={{ color: '#f1c40f', fontWeight: '900', fontSize: '0.85rem' }}>{selectedRestaurant.rating.toFixed(1)} / 5.0</span>
                       </div>
                       <span style={{ color: '#666', fontSize: '0.9rem' }}>•</span>
-                      <span style={{ color: '#aaa', fontSize: '0.9rem', fontWeight: '600' }}>🏪 {selectedRestaurant.address}</span>
+                      <span style={{ color: '#aaa', fontSize: '0.9rem', fontWeight: '600' }}>🏪 {selectedRestaurant.address || "Location not provided"}</span>
+                      <span style={{ color: '#666', fontSize: '0.9rem' }}>•</span>
+                      <span style={{ color: '#aaa', fontSize: '0.9rem', fontWeight: '600' }}>📞 {selectedRestaurant.contactNumber || "No contact"}</span>
                     </div>
                   </div>
-                  <div style={{ fontSize: '7rem', opacity: 0.25, transform: 'rotate(-10deg)', userSelect: 'none' }}>🍽️</div>
+                  {showBrowseRatingUI ? (
+                    <div className="glass" style={{ 
+                      position: 'absolute',
+                      top: '50%',
+                      right: '40px',
+                      transform: 'translateY(-50%)',
+                      padding: '24px', 
+                      borderRadius: '24px', 
+                      border: '1px solid rgba(0, 243, 255, 0.2)', 
+                      background: 'linear-gradient(145deg, rgba(0, 243, 255, 0.05) 0%, rgba(0,0,0,0.6) 100%)',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                      animation: 'fadeIn 0.3s ease-out'
+                    }}>
+                      <h4 style={{ fontSize: '1.2rem', fontWeight: '900', margin: '0 0 16px 0', color: '#00f3ff', letterSpacing: '-0.5px' }}>RATE YOUR EXPERIENCE</h4>
+                      {browseRatingSubmitted ? (
+                        <div style={{ padding: '16px', borderRadius: '16px', background: 'rgba(46,204,113,0.1)', border: '1px solid rgba(46,204,113,0.2)', textAlign: 'center' }}>
+                          <span style={{ fontSize: '1.8rem' }}>✨</span>
+                          <p style={{ margin: '8px 0 0 0', fontSize: '1.05rem', fontWeight: '800', color: '#2ecc71' }}>Thank you for your feedback!</p>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '350px' }}>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            {[1, 2, 3, 4, 5].map(star => (
+                              <button
+                                key={star}
+                                onClick={() => setBrowseRestRating(star)}
+                                style={{
+                                  background: 'none', border: 'none', cursor: 'pointer',
+                                  fontSize: '2rem', color: star <= browseRestRating ? '#f1c40f' : '#333',
+                                  padding: 0, transition: 'all 0.2s',
+                                  filter: star <= browseRestRating ? 'drop-shadow(0 0 8px rgba(241, 196, 15, 0.5))' : 'none'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                              >★</button>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <input
+                              type="text"
+                              placeholder="Tell us what you loved..."
+                              value={browseRestFeedback}
+                              onChange={e => setBrowseRestFeedback(e.target.value)}
+                              style={{
+                                width: '100%', padding: '12px 16px', borderRadius: '14px',
+                                background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)',
+                                color: '#fff', fontSize: '0.95rem', outline: 'none', fontFamily: 'Outfit, sans-serif',
+                                transition: 'all 0.3s'
+                              }}
+                              onFocus={(e) => { e.target.style.border = '1px solid rgba(0, 243, 255, 0.5)'; e.target.style.boxShadow = '0 0 10px rgba(0, 243, 255, 0.1)'; }}
+                              onBlur={(e) => { e.target.style.border = '1px solid rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
+                            />
+                            <button
+                              onClick={handleRateRestaurant}
+                              disabled={submittingBrowseRating}
+                              className="neon-btn"
+                              style={{
+                                width: '100%', background: 'linear-gradient(135deg, #00f3ff 0%, #0070ff 100%)', color: '#000', border: 'none',
+                                padding: '12px', borderRadius: '14px', fontWeight: '900', cursor: submittingBrowseRating ? 'not-allowed' : 'pointer',
+                                fontSize: '0.95rem', boxShadow: '0 0 20px rgba(0,243,255,0.4)', transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => { if(!submittingBrowseRating) e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                              onMouseLeave={(e) => { if(!submittingBrowseRating) e.currentTarget.style.transform = 'translateY(0)'; }}
+                            >
+                              {submittingBrowseRating ? 'SUBMITTING...' : 'SUBMIT'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '7rem', opacity: 0.25, transform: 'rotate(-10deg)', userSelect: 'none' }}>🍽️</div>
+                  )}
                 </div>
+
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '48px', alignItems: 'flex-start' }}>
                   {/* Left Column: Menu list */}
@@ -1650,7 +1928,15 @@ const HomePage = ({ onLogout }) => {
                           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                             <div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                                <h4 style={{ fontSize: '1.2rem', fontWeight: '850', color: '#fff', margin: 0 }}>{item.name}</h4>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{
+                                    width: '14px', height: '14px', border: `1px solid ${item.isVeg ? '#2ecc71' : '#e74c3c'}`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '3px'
+                                  }}>
+                                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: item.isVeg ? '#2ecc71' : '#e74c3c' }}></div>
+                                  </div>
+                                  <h4 style={{ fontSize: '1.2rem', fontWeight: '850', color: '#fff', margin: 0 }}>{item.name}</h4>
+                                </div>
                                 <span style={{ fontSize: '1.25rem', fontWeight: '950', color: item.isAvailable ? '#00f3ff' : '#888' }}>₹{item.price.toFixed(2)}</span>
                               </div>
                               <p style={{ color: '#888', fontSize: '0.9rem', lineHeight: '1.4', marginTop: '6px', marginBottom: '16px' }}>{item.description}</p>
@@ -1847,14 +2133,42 @@ const HomePage = ({ onLogout }) => {
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '16px' }}>
-                <span>Delivery Fee</span>
-                <span style={{ color: '#eee', fontWeight: '600' }}>₹40.00</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.3rem', fontWeight: '900', marginBottom: '24px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
-                <span>Total</span>
-                <span style={{ color: '#00f3ff' }}>₹{Math.max(0, cartTotal + 40 - (appliedCoupon ? appliedCoupon.discountAmount : 0)).toFixed(2)}</span>
-              </div>
+              {(() => {
+                const targetRest = cartRestaurant || selectedRestaurant;
+                const addressObj = profileData?.addresses?.find(a => a.id === selectedDeliveryAddress);
+                let dist = 5;
+                if (targetRest && addressObj) {
+                  dist = getDistanceFromLatLonInKm(targetRest.latitude, targetRest.longitude, addressObj.latitude, addressObj.longitude);
+                }
+                const deliveryCharge = Math.max(5, Math.round(dist * 2));
+                const platformFee = 20.00;
+                const subtotal = Math.max(0, cartTotal - (appliedCoupon ? appliedCoupon.discountAmount : 0));
+                const gstOnFood = subtotal * 0.05;
+                const gstOnDeliveryAndPlatform = (platformFee + deliveryCharge) * 0.18;
+                const totalGst = gstOnFood + gstOnDeliveryAndPlatform;
+                const finalAmount = Math.max(0, subtotal + platformFee + deliveryCharge + totalGst);
+
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '16px' }}>
+                      <span>Delivery Fee</span>
+                      <span style={{ color: '#eee', fontWeight: '600' }}>₹{deliveryCharge.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '16px' }}>
+                      <span>Platform Fee</span>
+                      <span style={{ color: '#eee', fontWeight: '600' }}>₹{platformFee.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '16px' }}>
+                      <span>GST (Taxes)</span>
+                      <span style={{ color: '#eee', fontWeight: '600' }}>₹{totalGst.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.3rem', fontWeight: '900', marginBottom: '24px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
+                      <span>Total</span>
+                      <span style={{ color: '#00f3ff' }}>₹{finalAmount.toFixed(2)}</span>
+                    </div>
+                  </>
+                );
+              })()}
 
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', fontSize: '0.75rem', color: '#666', marginBottom: '8px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase' }}>DELIVERY ADDRESS</label>
@@ -1879,6 +2193,21 @@ const HomePage = ({ onLogout }) => {
                     + ADD DELIVERY ADDRESS
                   </button>
                 )}
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#666', marginBottom: '8px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase' }}>PAYMENT METHOD</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div onClick={() => setPaymentMethod('Online')} style={{ flex: 1, padding: '12px', background: paymentMethod === 'Online' ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255, 255, 255, 0.03)', border: paymentMethod === 'Online' ? '1px solid #00f3ff' : '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    <span style={{ color: paymentMethod === 'Online' ? '#00f3ff' : '#aaa', fontWeight: '800', fontSize: '0.9rem' }}>Net Banking</span>
+                  </div>
+                  <div onClick={() => setPaymentMethod('Wallet')} style={{ flex: 1, padding: '12px', background: paymentMethod === 'Wallet' ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255, 255, 255, 0.03)', border: paymentMethod === 'Wallet' ? '1px solid #00f3ff' : '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    <span style={{ color: paymentMethod === 'Wallet' ? '#00f3ff' : '#aaa', fontWeight: '800', fontSize: '0.9rem' }}>Wallet</span>
+                  </div>
+                  <div onClick={() => setPaymentMethod('COD')} style={{ flex: 1, padding: '12px', background: paymentMethod === 'COD' ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255, 255, 255, 0.03)', border: paymentMethod === 'COD' ? '1px solid #00f3ff' : '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    <span style={{ color: paymentMethod === 'COD' ? '#00f3ff' : '#aaa', fontWeight: '700', fontSize: '0.9rem' }}>Cash on Delivery</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1919,21 +2248,24 @@ const HomePage = ({ onLogout }) => {
             <p style={{ color: '#888', marginTop: '8px' }}>Looks like you haven't placed any orders yet.</p>
           </div>
         ) : (
-          myOrders.map(order => (
-            <div key={order.id} className="glass" style={{ padding: '24px', borderRadius: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h4 style={{ fontSize: '1.1rem', fontWeight: '700' }}>{order.restaurantName}</h4>
-                <p style={{ color: '#666', fontSize: '0.85rem' }}>{new Date(order.createdAt).toLocaleDateString()} • {order.itemCount} items</p>
-              </div>
-              <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontWeight: '800' }}>₹{order.totalAmount.toFixed(2)}</p>
-                  <span style={{ color: getStatusColor(order.status), fontSize: '0.8rem', fontWeight: '800', letterSpacing: '1px' }}>{order.status.toUpperCase()}</span>
+          <>
+            {paginatedHistory.map(order => (
+              <div key={order.id} className="glass" style={{ padding: '24px', borderRadius: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h4 style={{ fontSize: '1.1rem', fontWeight: '700' }}>{order.restaurantName}</h4>
+                  <p style={{ color: '#666', fontSize: '0.85rem' }}>{new Date(order.createdAt).toLocaleDateString()} • {order.itemCount} items</p>
                 </div>
-                <button onClick={() => fetchOrderDetails(order.id)} style={{ padding: '12px 24px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', fontWeight: '600' }}>Details</button>
+                <div style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontWeight: '800' }}>₹{order.totalAmount.toFixed(2)}</p>
+                    <span style={{ color: getStatusColor(order.status), fontSize: '0.8rem', fontWeight: '800', letterSpacing: '1px' }}>{order.status.toUpperCase()}</span>
+                  </div>
+                  <button onClick={() => fetchOrderDetails(order.id)} style={{ padding: '12px 24px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', fontWeight: '600' }}>Details</button>
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+            <Pagination currentPage={historyPage} totalPages={totalHistoryPages} onPageChange={setHistoryPage} />
+          </>
         )}
       </div>
     </>
@@ -1960,8 +2292,8 @@ const HomePage = ({ onLogout }) => {
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', zIndex: 2 }}>
-              {['Placed', 'Accepted', 'Preparing', 'Ready', 'Delivered'].map((step, i) => {
-                const steps = ['Placed', 'Accepted', 'Preparing', 'Ready', 'Delivered'];
+              {['Placed', 'Accepted', 'Preparing', 'Ready', 'Picked', 'Delivered'].map((step, i) => {
+                const steps = ['Placed', 'Accepted', 'Preparing', 'Ready', 'Picked', 'Delivered'];
                 const currentIndex = steps.indexOf(trackingOrder.status);
                 const stepIndex = steps.indexOf(step);
                 const isCompleted = stepIndex <= currentIndex;
@@ -2000,11 +2332,19 @@ const HomePage = ({ onLogout }) => {
           ))}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '20px', paddingTop: '20px', display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '10px' }}>
             <span>Subtotal</span>
-            <span>₹{(trackingOrder.totalAmount - (trackingOrder.deliveryFee || 5)).toFixed(2)}</span>
+            <span>₹{(trackingOrder.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) - (trackingOrder.discountAmount || 0)).toFixed(2)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '10px' }}>
             <span>Delivery Fee</span>
             <span>₹{(trackingOrder.deliveryFee || 5).toFixed(2)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '10px' }}>
+            <span>Platform Fee</span>
+            <span>₹20.00</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#888', marginBottom: '20px' }}>
+            <span>GST (Taxes)</span>
+            <span>₹{(trackingOrder.totalAmount - (trackingOrder.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) - (trackingOrder.discountAmount || 0)) - (trackingOrder.deliveryFee || 5) - 20).toFixed(2)}</span>
           </div>
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: '800', marginBottom: trackingOrder.status === 'Placed' ? '20px' : '0' }}>
             <span>Total</span>
@@ -2052,22 +2392,24 @@ const HomePage = ({ onLogout }) => {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Restaurant Rating */}
+
+
+                  {/* Driver Rating */}
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.04)' }}>
                     <span style={{ fontSize: '0.78rem', color: '#eee', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
-                      Rate Restaurant: <span style={{ color: '#00f3ff' }}>{trackingOrder.restaurantName}</span>
+                      Rate Driver: <span style={{ color: '#00f3ff' }}>{trackingOrder.driverName || 'Delivery Partner'}</span>
                     </span>
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
                       {[1, 2, 3, 4, 5].map((star) => (
                         <button
                           key={star}
-                          onClick={() => setRestRating(star)}
+                          onClick={() => setDriverRating(star)}
                           style={{
                             background: 'none',
                             border: 'none',
                             cursor: 'pointer',
                             fontSize: '1.4rem',
-                            color: star <= restRating ? '#f39c12' : '#444',
+                            color: star <= driverRating ? '#f39c12' : '#444',
                             padding: 0,
                             transition: 'transform 0.1s'
                           }}
@@ -2080,9 +2422,9 @@ const HomePage = ({ onLogout }) => {
                     </div>
                     <input
                       type="text"
-                      placeholder="Write restaurant feedback..."
-                      value={restFeedback}
-                      onChange={e => setRestFeedback(e.target.value)}
+                      placeholder="Write driver feedback..."
+                      value={driverFeedback}
+                      onChange={e => setDriverFeedback(e.target.value)}
                       style={{
                         width: '100%',
                         padding: '8px 12px',
@@ -2095,52 +2437,6 @@ const HomePage = ({ onLogout }) => {
                       }}
                     />
                   </div>
-
-                  {/* Driver Rating */}
-                  {trackingOrder.driverName && (
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#eee', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
-                        Rate Driver: <span style={{ color: '#00f3ff' }}>{trackingOrder.driverName}</span>
-                      </span>
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            onClick={() => setDriverRating(star)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: '1.4rem',
-                              color: star <= driverRating ? '#f39c12' : '#444',
-                              padding: 0,
-                              transition: 'transform 0.1s'
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
-                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                          >
-                            ★
-                          </button>
-                        ))}
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Write driver feedback..."
-                        value={driverFeedback}
-                        onChange={e => setDriverFeedback(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                          color: '#fff',
-                          fontSize: '0.8rem',
-                          fontFamily: 'Outfit, sans-serif'
-                        }}
-                      />
-                    </div>
-                  )}
 
                   <button
                     onClick={() => handleRateOrder(trackingOrder.id)}
@@ -2490,6 +2786,32 @@ const HomePage = ({ onLogout }) => {
     </div>
   )
 }
+      {/* Scroll to Top Button */}
+      {showScrollTop && activeTab === 'browse' && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="glass neon-btn"
+          title="Go to top"
+          style={{
+            position: 'fixed',
+            bottom: '30px',
+            right: '30px',
+            width: '50px',
+            height: '50px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.5rem',
+            zIndex: 9999,
+            padding: 0,
+            animation: 'fadeIn 0.3s ease-out'
+          }}
+        >
+          ↑
+        </button>
+      )}
+
       {/* Toast Notification */}
       {toastMessage && (
         <div style={{

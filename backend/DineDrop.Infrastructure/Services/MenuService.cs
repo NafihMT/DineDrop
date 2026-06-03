@@ -98,7 +98,8 @@ namespace DineDrop.Infrastructure.Services
                 Description = dto.Description,
                 Price = dto.Price,
                 ImageUrl = dto.ImageUrl,
-                IsAvailable = dto.IsAvailable
+                IsAvailable = dto.IsAvailable,
+                IsVeg = dto.IsVeg
             };
 
             _context.MenuItems.Add(item);
@@ -118,7 +119,8 @@ namespace DineDrop.Infrastructure.Services
                 Description = item.Description,
                 Price = item.Price,
                 ImageUrl = item.ImageUrl,
-                IsAvailable = item.IsAvailable
+                IsAvailable = item.IsAvailable,
+                IsVeg = item.IsVeg
             };
         }
 
@@ -174,7 +176,8 @@ namespace DineDrop.Infrastructure.Services
                     Description = m.Description,
                     Price = m.Price,
                     ImageUrl = m.ImageUrl,
-                    IsAvailable = m.IsAvailable
+                    IsAvailable = m.IsAvailable,
+                    IsVeg = m.IsVeg
                 }).ToListAsync();
         }
 
@@ -233,6 +236,7 @@ namespace DineDrop.Infrastructure.Services
                 item.ImageUrl = dto.ImageUrl;
             }
             item.IsAvailable = dto.IsAvailable;
+            item.IsVeg = dto.IsVeg;
 
             await _context.SaveChangesAsync();
 
@@ -250,7 +254,8 @@ namespace DineDrop.Infrastructure.Services
                 Description = item.Description,
                 Price = item.Price,
                 ImageUrl = item.ImageUrl,
-                IsAvailable = item.IsAvailable
+                IsAvailable = item.IsAvailable,
+                IsVeg = item.IsVeg
             };
         }
     }

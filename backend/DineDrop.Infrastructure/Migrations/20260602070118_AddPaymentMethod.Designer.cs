@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DineDrop.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260525133515_AddIsRatedToOrder")]
-    partial class AddIsRatedToOrder
+    [Migration("20260602070118_AddPaymentMethod")]
+    partial class AddPaymentMethod
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -95,6 +95,9 @@ namespace DineDrop.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<double>("Rating")
+                        .HasColumnType("float");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -283,17 +286,31 @@ namespace DineDrop.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("ExpiryDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<decimal>("MinOrderAmount")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid?>("RestaurantId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -307,6 +324,34 @@ namespace DineDrop.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Offers");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111111"),
+                            Code = "NEW50",
+                            CreatedAt = new DateTime(2026, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
+                            CreatedBy = "Platform",
+                            ExpiryDate = new DateTime(2030, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinOrderAmount = 0.00m,
+                            Type = 0,
+                            Value = 50.00m
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222222"),
+                            Code = "FIRST50",
+                            CreatedAt = new DateTime(2026, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
+                            CreatedBy = "Platform",
+                            ExpiryDate = new DateTime(2030, 1, 1, 5, 30, 0, 0, DateTimeKind.Local),
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinOrderAmount = 0.00m,
+                            Type = 0,
+                            Value = 50.00m
+                        });
                 });
 
             modelBuilder.Entity("DineDrop.Domain.Entities.Order", b =>
@@ -336,6 +381,12 @@ namespace DineDrop.Infrastructure.Migrations
                     b.Property<bool>("IsRated")
                         .HasColumnType("bit");
 
+                    b.Property<Guid?>("OfferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("PaymentMethod")
+                        .HasColumnType("int");
+
                     b.Property<int>("PaymentStatus")
                         .HasColumnType("int");
 
@@ -357,6 +408,8 @@ namespace DineDrop.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DriverId");
+
+                    b.HasIndex("OfferId");
 
                     b.HasIndex("RestaurantId");
 
@@ -513,6 +566,9 @@ namespace DineDrop.Infrastructure.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ImageUrl")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsDeleted")
@@ -758,13 +814,13 @@ namespace DineDrop.Infrastructure.Migrations
                         {
                             Id = new Guid("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b"),
                             ApprovalStatus = 1,
-                            CreatedAt = new DateTime(2026, 5, 25, 13, 35, 12, 347, DateTimeKind.Utc).AddTicks(2819),
+                            CreatedAt = new DateTime(2026, 6, 2, 7, 1, 15, 313, DateTimeKind.Utc).AddTicks(8432),
                             Email = "admin@dinedrop.com",
                             IsActive = true,
                             IsBlocked = false,
                             IsDeleted = false,
                             Name = "Admin",
-                            PasswordHash = "$2a$11$lC3Id15TaJyfzc6CtP7F8.ISrcN5c10hy1eMtBjPTrt9deBUHrZii",
+                            PasswordHash = "$2a$11$Zy7dvVkQuZFMitdhjDJ8J.8XyviKoTBAei7cw5mXEf91Ws64wbiUS",
                             Phone = "9999999999",
                             Role = 3
                         });
@@ -848,6 +904,11 @@ namespace DineDrop.Infrastructure.Migrations
                         .HasForeignKey("DriverId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("DineDrop.Domain.Entities.Offer", "Offer")
+                        .WithMany()
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("DineDrop.Domain.Entities.Restaurant", "Restaurant")
                         .WithMany()
                         .HasForeignKey("RestaurantId")
@@ -859,6 +920,8 @@ namespace DineDrop.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Offer");
 
                     b.Navigation("Restaurant");
 

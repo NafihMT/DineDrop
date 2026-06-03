@@ -20,6 +20,7 @@ namespace DineDrop.Domain.Entities
 
         public OrderStatus Status { get; set; }
         public PaymentStatus PaymentStatus { get; set; }
+        public PaymentMethod PaymentMethod { get; set; }
 
         public decimal TotalAmount { get; set; }
         public decimal DeliveryFee { get; set; }

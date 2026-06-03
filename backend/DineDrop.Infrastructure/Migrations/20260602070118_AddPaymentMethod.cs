@@ -6,39 +6,39 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace DineDrop.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class AddRatingToDriver : Migration
+    public partial class AddPaymentMethod : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<double>(
-                name: "Rating",
-                table: "Drivers",
-                type: "float",
+            migrationBuilder.AddColumn<int>(
+                name: "PaymentMethod",
+                table: "Orders",
+                type: "int",
                 nullable: false,
-                defaultValue: 0.0);
+                defaultValue: 0);
 
             migrationBuilder.UpdateData(
                 table: "Users",
                 keyColumn: "Id",
                 keyValue: new Guid("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b"),
                 columns: new[] { "CreatedAt", "PasswordHash" },
-                values: new object[] { new DateTime(2026, 5, 25, 13, 42, 32, 196, DateTimeKind.Utc).AddTicks(3473), "$2a$11$nW9Hbn5LmlX1k5gKThVCsuHPitrZfkGSUBHSHjG.vlC5.eX/YI/02" });
+                values: new object[] { new DateTime(2026, 6, 2, 7, 1, 15, 313, DateTimeKind.Utc).AddTicks(8432), "$2a$11$Zy7dvVkQuZFMitdhjDJ8J.8XyviKoTBAei7cw5mXEf91Ws64wbiUS" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "Rating",
-                table: "Drivers");
+                name: "PaymentMethod",
+                table: "Orders");
 
             migrationBuilder.UpdateData(
                 table: "Users",
                 keyColumn: "Id",
                 keyValue: new Guid("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b"),
                 columns: new[] { "CreatedAt", "PasswordHash" },
-                values: new object[] { new DateTime(2026, 5, 25, 13, 35, 12, 347, DateTimeKind.Utc).AddTicks(2819), "$2a$11$lC3Id15TaJyfzc6CtP7F8.ISrcN5c10hy1eMtBjPTrt9deBUHrZii" });
+                values: new object[] { new DateTime(2026, 5, 29, 8, 48, 0, 714, DateTimeKind.Utc).AddTicks(7294), "$2a$11$gjBGXD40po5fKzIUo9dWX.24ujNrd.VBoM59JBM7RVXUxzPvUgWXi" });
         }
     }
 }

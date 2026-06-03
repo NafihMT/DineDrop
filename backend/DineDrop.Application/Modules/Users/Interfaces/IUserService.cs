@@ -21,5 +21,7 @@ namespace DineDrop.Application.Modules.Users.Interfaces
         Task<UserAddressDto?> UpdateUserAddressAsync(Guid userId, Guid addressId, AddUserAddressDto dto);
         Task<bool> DeleteUserAddressAsync(Guid userId, Guid addressId);
         Task<decimal> AddWalletFundsAsync(Guid userId, decimal amount);
+        Task<WalletDetailsDto> GetWalletDetailsAsync(Guid userId);
+        Task<bool> RateRestaurantAsync(Guid userId, Guid restaurantId, RateRestaurantDto dto);
     }
 }

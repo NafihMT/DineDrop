@@ -21,7 +21,8 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task<IEnumerable<RestaurantProfileDto>> GetAllRestaurantAsync()
         {
-            return await _context.Restaurants
+            var restaurants = await _context.Restaurants
+                    .Include(r => r.Owner)
                     .OrderByDescending(r => r.Rating)
                     .Select(r => new RestaurantProfileDto
                     {
@@ -33,9 +34,26 @@ namespace DineDrop.Infrastructure.Services
                         Latitude = r.Latitude,
                         Longitude = r.Longitude,
                         ImageUrl = r.ImageUrl,
+                        ContactNumber = r.Owner.Phone,
+                        Address = _context.RestaurantProfiles.Where(p => p.UserId == r.OwnerId).Select(p => p.Address).FirstOrDefault() ?? string.Empty,
                         DishCount = _context.MenuItems.Count(m => m.RestaurantId == r.Id && !m.IsDeleted && m.IsAvailable)
                     }).ToListAsync();
 
+            var menuItems = await _context.MenuItems
+                .Include(m => m.Category)
+                .Where(m => !m.IsDeleted && m.IsAvailable)
+                .ToListAsync();
+
+            foreach (var r in restaurants)
+            {
+                r.Categories = menuItems
+                    .Where(m => m.RestaurantId == r.Id)
+                    .Select(m => m.Category != null ? m.Category.Name : "General")
+                    .Distinct()
+                    .ToList();
+            }
+
+            return restaurants;
         }
 
         public async Task<IEnumerable<MenuItemDto>> GetAllDishesAsync()
@@ -236,6 +254,62 @@ namespace DineDrop.Infrastructure.Services
 
             await _context.SaveChangesAsync();
             return wallet.Balance;
+        }
+
+        public async Task<WalletDetailsDto> GetWalletDetailsAsync(Guid userId)
+        {
+            var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+            if (wallet == null)
+            {
+                wallet = new Domain.Entities.Wallet { UserId = userId, Balance = 0.00m };
+                _context.Wallets.Add(wallet);
+                await _context.SaveChangesAsync();
+            }
+
+            var ledgers = await _context.LedgerEntries
+                .Where(l => l.EntityId == userId)
+                .OrderByDescending(l => l.CreatedAt)
+                .Select(l => new LedgerEntryDto
+                {
+                    Id = l.Id,
+                    Type = l.Type.ToString(),
+                    Amount = l.Amount,
+                    Description = l.Description,
+                    CreatedAt = l.CreatedAt,
+                    OrderId = l.OrderId
+                })
+                .ToListAsync();
+
+            return new WalletDetailsDto
+            {
+                Balance = wallet.Balance,
+                History = ledgers
+            };
+        }
+        public async Task<bool> RateRestaurantAsync(Guid userId, Guid restaurantId, RateRestaurantDto dto)
+        {
+            var restaurant = await _context.Restaurants.FindAsync(restaurantId);
+            if (restaurant == null) return false;
+
+            var restRating = new Domain.Entities.Rating
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                RestaurantId = restaurantId,
+                Value = dto.Rating,
+                Comment = dto.Feedback ?? string.Empty
+            };
+            _context.Ratings.Add(restRating);
+
+            var allRestRatings = await _context.Ratings
+                .Where(r => r.RestaurantId == restaurantId)
+                .Select(r => r.Value)
+                .ToListAsync();
+            allRestRatings.Add(dto.Rating);
+            restaurant.Rating = allRestRatings.Average();
+
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

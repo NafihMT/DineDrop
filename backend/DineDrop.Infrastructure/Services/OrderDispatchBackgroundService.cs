@@ -57,7 +57,7 @@ namespace DineDrop.Infrastructure.Services
                 var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<OrderHub>>();
 
                 // Threshold: 30 Minutes ago for testing
-                var thresholdTime = DateTime.UtcNow.AddMinutes(-30);
+                var thresholdTime = DateTime.UtcNow.AddHours(5).AddMinutes(30).AddMinutes(-30);
 
                 var activeCount = await context.Orders
                     .CountAsync(o => o.DriverId == null && 
@@ -85,7 +85,7 @@ namespace DineDrop.Infrastructure.Services
                     foreach (var order in unpickedOrders)
                     {
                         order.Status = OrderStatus.Cancelled;
-                        order.UpdatedAt = DateTime.UtcNow;
+                        order.UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30);
 
                         // Refund the customer
                         var wallet = await context.Wallets.FirstOrDefaultAsync(w => w.UserId == order.UserId);

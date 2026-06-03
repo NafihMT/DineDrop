@@ -221,6 +221,9 @@ namespace DineDrop.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsVeg")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -380,6 +383,9 @@ namespace DineDrop.Infrastructure.Migrations
 
                     b.Property<Guid?>("OfferId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("PaymentMethod")
+                        .HasColumnType("int");
 
                     b.Property<int>("PaymentStatus")
                         .HasColumnType("int");
@@ -808,13 +814,13 @@ namespace DineDrop.Infrastructure.Migrations
                         {
                             Id = new Guid("f9e7b1a2-3c4d-5e6f-7a8b-9c0d1e2f3a4b"),
                             ApprovalStatus = 1,
-                            CreatedAt = new DateTime(2026, 5, 29, 8, 48, 0, 714, DateTimeKind.Utc).AddTicks(7294),
+                            CreatedAt = new DateTime(2026, 6, 3, 12, 19, 29, 803, DateTimeKind.Utc).AddTicks(3482),
                             Email = "admin@dinedrop.com",
                             IsActive = true,
                             IsBlocked = false,
                             IsDeleted = false,
                             Name = "Admin",
-                            PasswordHash = "$2a$11$gjBGXD40po5fKzIUo9dWX.24ujNrd.VBoM59JBM7RVXUxzPvUgWXi",
+                            PasswordHash = "$2a$11$ieBXklbAFLxqW7e1MeBObOsvzESqYddXG5KFulS/7yeFHDBOA9cDa",
                             Phone = "9999999999",
                             Role = 3
                         });

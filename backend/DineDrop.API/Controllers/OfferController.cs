@@ -45,6 +45,11 @@ namespace DineDrop.API.Controllers
             if (exists)
                 return BadRequest("A coupon with this code already exists.");
 
+            if (dto.Type == OfferType.Percentage && dto.Value > 100)
+                return BadRequest("Percentage discount cannot exceed 100%.");
+            if (dto.Type == OfferType.Flat && dto.Value > 500)
+                return BadRequest("Flat discount amount cannot exceed ₹500.");
+
             var userId = GetUserId();
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
@@ -58,7 +63,7 @@ namespace DineDrop.API.Controllers
                 MinOrderAmount = dto.MinOrderAmount,
                 ExpiryDate = dto.ExpiryDate,
                 IsActive = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30)
             };
 
             if (user.Role == UserRole.Restaurant)
@@ -93,7 +98,24 @@ namespace DineDrop.API.Controllers
 
             if (user.Role == UserRole.Admin)
             {
-                var offers = await _context.Offers.Where(o => !o.IsDeleted).OrderByDescending(o => o.CreatedAt).ToListAsync();
+                var offers = await _context.Offers
+                    .Where(o => !o.IsDeleted)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => new {
+                        o.Id,
+                        o.Code,
+                        o.CreatedBy,
+                        o.RestaurantId,
+                        o.IsActive,
+                        o.Type,
+                        o.Value,
+                        o.MinOrderAmount,
+                        o.ExpiryDate,
+                        o.CreatedAt,
+                        o.UpdatedAt,
+                        RestaurantName = _context.Restaurants.Where(r => r.Id == o.RestaurantId).Select(r => r.Name).FirstOrDefault()
+                    })
+                    .ToListAsync();
                 return Ok(offers);
             }
             else if (user.Role == UserRole.Restaurant)
@@ -112,7 +134,7 @@ namespace DineDrop.API.Controllers
             {
                 // Return all active offers
                 var offers = await _context.Offers
-                    .Where(o => o.IsActive && o.ExpiryDate >= DateTime.UtcNow && !o.IsDeleted)
+                    .Where(o => o.IsActive && o.ExpiryDate >= DateTime.UtcNow.AddHours(5).AddMinutes(30) && !o.IsDeleted)
                     .OrderByDescending(o => o.CreatedAt)
                     .ToListAsync();
                 return Ok(offers);
@@ -141,7 +163,7 @@ namespace DineDrop.API.Controllers
             }
 
             offer.IsActive = !offer.IsActive;
-            offer.UpdatedAt = DateTime.UtcNow;
+            offer.UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30);
             await _context.SaveChangesAsync();
 
             return Ok(new { message = $"Coupon status toggled to {(offer.IsActive ? "Active" : "Inactive")}", isActive = offer.IsActive });
@@ -159,6 +181,11 @@ namespace DineDrop.API.Controllers
             var exists = await _context.Offers.AnyAsync(o => o.Code.ToUpper() == code && o.Id != id && !o.IsDeleted);
             if (exists)
                 return BadRequest("A coupon with this code already exists.");
+
+            if (dto.Type == OfferType.Percentage && dto.Value > 100)
+                return BadRequest("Percentage discount cannot exceed 100%.");
+            if (dto.Type == OfferType.Flat && dto.Value > 500)
+                return BadRequest("Flat discount amount cannot exceed ₹500.");
 
             var userId = GetUserId();
             var user = await _context.Users.FindAsync(userId);
@@ -181,7 +208,7 @@ namespace DineDrop.API.Controllers
             offer.Value = dto.Value;
             offer.MinOrderAmount = dto.MinOrderAmount;
             offer.ExpiryDate = dto.ExpiryDate;
-            offer.UpdatedAt = DateTime.UtcNow;
+            offer.UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30);
 
             await _context.SaveChangesAsync();
             return Ok(offer);
@@ -209,7 +236,7 @@ namespace DineDrop.API.Controllers
             }
 
             offer.IsDeleted = true;
-            offer.UpdatedAt = DateTime.UtcNow;
+            offer.UpdatedAt = DateTime.UtcNow.AddHours(5).AddMinutes(30);
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Offer deleted successfully." });
@@ -225,7 +252,7 @@ namespace DineDrop.API.Controllers
 
             var uppercaseCode = code.Trim().ToUpper();
             var offer = await _context.Offers
-                .FirstOrDefaultAsync(o => o.Code.ToUpper() == uppercaseCode && o.IsActive && o.ExpiryDate >= DateTime.UtcNow && !o.IsDeleted);
+                .FirstOrDefaultAsync(o => o.Code.ToUpper() == uppercaseCode && o.IsActive && o.ExpiryDate >= DateTime.UtcNow.AddHours(5).AddMinutes(30) && !o.IsDeleted);
 
             if (offer == null)
                 return BadRequest(new { isValid = false, message = "Coupon code is invalid or has expired." });

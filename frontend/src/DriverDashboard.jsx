@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import WalletView from './WalletView';
+import OrderTrackingMap from './OrderTrackingMap';
 import './DriverDashboard.css';
 import * as signalR from "@microsoft/signalr";
 
@@ -459,18 +461,6 @@ const DriverDashboard = ({ onLogout }) => {
     return `${Math.floor(diff / 60)}h ago`;
   };
 
-  const locIcon = {
-    idle: '📍',
-    loading: '⏳',
-    ok: '🟢',
-    error_permission: '🔴',
-    error_unavailable: '🔴',
-    error_timeout: '🔴',
-    denied: '🔴'
-  };
-
-  const isLocError = locationStatus.startsWith('error') || locationStatus === 'denied';
-
   return (
     <div className="dd-root">
 
@@ -524,7 +514,7 @@ const DriverDashboard = ({ onLogout }) => {
         </div>
 
         {/* Location Status */}
-        <div className={`dd-loc-card ${locationStatus === 'ok' ? 'ok' : isLocError ? 'error' : ''}`}>
+        <div className={`dd-loc-card ${locationStatus === 'ok' ? 'ok' : locationStatus.startsWith('error') || locationStatus === 'denied' ? 'error' : ''}`}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
             <p className="dd-label" style={{ margin: 0 }}>YOUR LOCATION</p>
             <span onClick={() => toggleSimulationMode(!isSimulating)}
@@ -534,7 +524,7 @@ const DriverDashboard = ({ onLogout }) => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem' }}>{isSimulating ? '🎮' : locationStatus === 'ok' ? '●' : '○'}</span>
-            <span style={{ fontSize: '0.75rem', color: locationStatus === 'ok' ? 'var(--dd-green)' : isLocError ? 'var(--dd-red)' : '#666', fontWeight: '600', wordBreak: 'break-word' }}>
+            <span style={{ fontSize: '0.75rem', color: locationStatus === 'ok' ? 'var(--dd-green)' : (locationStatus.startsWith('error') || locationStatus === 'denied') ? 'var(--dd-red)' : '#666', fontWeight: '600', wordBreak: 'break-word' }}>
               {locationStatus === 'ok' && driverPos ? `${driverPos.lat.toFixed(5)}, ${driverPos.lng.toFixed(5)}` : (locationError || 'Acquiring…')}
             </span>
           </div>
@@ -563,7 +553,7 @@ const DriverDashboard = ({ onLogout }) => {
               )}
             </div>
           )}
-          {isLocError && !isSimulating && (
+          {(locationStatus.startsWith('error') || locationStatus === 'denied') && !isSimulating && (
             <button className="dd-sim-btn" style={{ marginTop: '8px', width: '100%' }} onClick={startTrackingLocation}>Retry</button>
           )}
         </div>
@@ -587,12 +577,13 @@ const DriverDashboard = ({ onLogout }) => {
             { id: 'available', label: 'Available Orders', badge: totalOrders },
             { id: 'active', label: 'Active Deliveries', badge: activeOrders.length },
             { id: 'earnings', label: 'Earnings', badge: null },
-          ].map(item => (
-            <button key={item.id} className={`dd-nav-btn ${activeTab === item.id ? 'active' : ''}`} onClick={() => setActiveTab(item.id)}>
+            { id: 'wallet', label: 'Wallet', badge: null },
+          ].map(tab => (
+            <button key={tab.id} className={`dd-nav-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
               <span className="dd-nav-icon">
-                {item.id === 'available' ? '📦' : item.id === 'active' ? '🛵' : '💰'} {item.label}
+                {tab.id === 'available' ? '📦' : tab.id === 'active' ? '🛵' : tab.id === 'earnings' ? '💰' : '💳'} {tab.label}
               </span>
-              {item.badge > 0 && <span className="dd-badge">{item.badge}</span>}
+              {tab.badge > 0 && <span className="dd-badge">{tab.badge}</span>}
             </button>
           ))}
         </nav>
@@ -1123,6 +1114,13 @@ const DriverDashboard = ({ onLogout }) => {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'wallet' && (
+          <div className="dd-fade-in dd-content-panel">
+            <h2 className="dd-panel-title">Your Wallet</h2>
+            <WalletView role="driver" />
           </div>
         )}
       </main>

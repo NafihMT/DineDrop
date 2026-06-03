@@ -60,4 +60,20 @@ namespace DineDrop.Application.Modules.Users.DTOs
         public string RazorpayPaymentId { get; set; } = string.Empty;
         public string RazorpaySignature { get; set; } = string.Empty;
     }
+
+    public class LedgerEntryDto
+    {
+        public Guid Id { get; set; }
+        public string Type { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public Guid? OrderId { get; set; }
+    }
+
+    public class WalletDetailsDto
+    {
+        public decimal Balance { get; set; }
+        public List<LedgerEntryDto> History { get; set; } = new();
+    }
 }
