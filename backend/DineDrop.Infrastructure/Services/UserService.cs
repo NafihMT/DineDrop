@@ -75,7 +75,8 @@ namespace DineDrop.Infrastructure.Services
                     RestaurantLatitude = m.Restaurant.Latitude,
                     RestaurantLongitude = m.Restaurant.Longitude,
                     RestaurantIsOpen = m.Restaurant.IsOpen,
-                    IsAvailable = m.IsAvailable
+                    IsAvailable = m.IsAvailable,
+                    IsVeg = m.IsVeg
                 }).ToListAsync();
         }
 
@@ -92,7 +93,8 @@ namespace DineDrop.Infrastructure.Services
                     Price = m.Price,
                     ImageUrl = m.ImageUrl,
                     CategoryName = m.Category != null ? m.Category.Name : "General",
-                    IsAvailable = m.IsAvailable
+                    IsAvailable = m.IsAvailable,
+                    IsVeg = m.IsVeg
                 }).ToListAsync();
         }
         public async Task<UserProfileDto?> GetUserProfileAsync(Guid userId)
@@ -249,6 +251,39 @@ namespace DineDrop.Infrastructure.Services
                 Type = Domain.Enums.LedgerType.Credit,
                 Amount = amount,
                 Description = $"Added funds to wallet via direct deposit"
+            };
+            _context.LedgerEntries.Add(ledger);
+
+            await _context.SaveChangesAsync();
+            return wallet.Balance;
+        }
+
+        public async Task<decimal> WithdrawWalletFundsAsync(Guid userId, decimal amount)
+        {
+            if (amount <= 0) throw new Exception("Withdrawal amount must be greater than zero.");
+
+            var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+            if (wallet == null || wallet.Balance < amount)
+            {
+                throw new Exception("Insufficient funds.");
+            }
+
+            wallet.Balance -= amount;
+
+            var ledger = new Domain.Entities.LedgerEntry
+            {
+                EntityId = userId,
+                // Determine entity type based on user role
+                EntityType = _context.Users.FirstOrDefault(u => u.Id == userId)?.Role switch
+                {
+                    Domain.Enums.UserRole.Admin => Domain.Enums.LedgerEntityType.Admin,
+                    Domain.Enums.UserRole.Restaurant => Domain.Enums.LedgerEntityType.Restaurant,
+                    Domain.Enums.UserRole.Driver => Domain.Enums.LedgerEntityType.Driver,
+                    _ => Domain.Enums.LedgerEntityType.User
+                },
+                Type = Domain.Enums.LedgerType.Debit,
+                Amount = amount,
+                Description = $"Withdrawal to Bank Account"
             };
             _context.LedgerEntries.Add(ledger);
 

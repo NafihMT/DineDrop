@@ -883,13 +883,10 @@ const DriverDashboard = ({ onLogout }) => {
                     {order.restaurantLatitude && order.restaurantLongitude && order.customerLatitude && order.customerLongitude && (
                       <div style={{ marginBottom: '24px' }}>
                         <OrderTrackingMap 
-                          driverLat={driverPos?.lat || 11.1202} 
-                          driverLng={driverPos?.lng || 76.1200}
-                          restLat={order.restaurantLatitude} 
-                          restLng={order.restaurantLongitude}
-                          custLat={order.customerLatitude} 
-                          custLng={order.customerLongitude}
-                          status={order.status}
+                          driverCoords={{ lat: driverPos?.lat || 11.1202, lng: driverPos?.lng || 76.1200 }}
+                          restaurantCoords={{ lat: order.restaurantLatitude, lng: order.restaurantLongitude }}
+                          customerCoords={{ lat: order.customerLatitude, lng: order.customerLongitude }}
+                          orderStatus={order.status}
                         />
                       </div>
                     )}

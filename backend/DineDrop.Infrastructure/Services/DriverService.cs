@@ -28,8 +28,8 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task<List<AvailableOrdersByRestaurantDto>> GetAvailableOrdersAsync(Guid userId)
         {
-            var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.UserId == userId);
-            if (driver == null) return new List<AvailableOrdersByRestaurantDto>();
+            var driver = await _context.Drivers.Include(d => d.User).FirstOrDefaultAsync(d => d.UserId == userId);
+            if (driver == null || driver.User.IsBlocked) return new List<AvailableOrdersByRestaurantDto>();
 
             var driverPos = await _redisService.GetDriverLocationAsync(driver.Id);
 
@@ -91,8 +91,8 @@ namespace DineDrop.Infrastructure.Services
 
         public async Task<bool> ToggleAvailabilityAsync(Guid userId)
         {
-            var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.UserId == userId);
-            if (driver == null) return false;
+            var driver = await _context.Drivers.Include(d => d.User).FirstOrDefaultAsync(d => d.UserId == userId);
+            if (driver == null || driver.User.IsBlocked) return false;
 
             driver.IsAvailable = !driver.IsAvailable;
             await _context.SaveChangesAsync();
@@ -116,8 +116,8 @@ namespace DineDrop.Infrastructure.Services
                  order.Status != OrderStatus.Ready))
                 return false;
 
-            var driver = await _context.Drivers.FirstOrDefaultAsync(d => d.UserId == userId);
-            if (driver == null) return false;
+            var driver = await _context.Drivers.Include(d => d.User).FirstOrDefaultAsync(d => d.UserId == userId);
+            if (driver == null || driver.User.IsBlocked) return false;
 
             // Business Rule: Don't allow accepting if driver has already committed to active delivery tasks,
             // unless the new order is from the same restaurant AND for the same customer (user).
@@ -339,16 +339,53 @@ namespace DineDrop.Infrastructure.Services
                 driverWallet.Balance -= amountOwedToAdmin;
                 adminWallet.Balance += amountOwedToAdmin;
 
-                var driverLedger = new Domain.Entities.LedgerEntry
+                // Driver Entry 1: Debt to Admin for cash collected
+                var driverDebitLedger = new Domain.Entities.LedgerEntry
                 {
                     EntityId = userId,
                     EntityType = Domain.Enums.LedgerEntityType.Driver,
                     Type = Domain.Enums.LedgerType.Debit,
-                    Amount = amountOwedToAdmin,
+                    Amount = order.TotalAmount,
                     OrderId = order.Id,
-                    Description = $"Remitted COD cash to Admin for order #{order.Id.ToString().Substring(0, 8)}"
+                    Description = $"Collected COD cash for order #{order.Id.ToString().Substring(0, 8)}"
                 };
-                _context.LedgerEntries.Add(driverLedger);
+                _context.LedgerEntries.Add(driverDebitLedger);
+
+                // Driver Entry 2: Earnings credited for the delivery
+                var driverCreditLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = userId,
+                    EntityType = Domain.Enums.LedgerEntityType.Driver,
+                    Type = Domain.Enums.LedgerType.Credit,
+                    Amount = order.DeliveryFee,
+                    OrderId = order.Id,
+                    Description = $"Earnings for delivery of order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(driverCreditLedger);
+
+                // Admin Entry 1: Total collected via COD
+                var adminCodCreditLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = adminId,
+                    EntityType = Domain.Enums.LedgerEntityType.Admin,
+                    Type = Domain.Enums.LedgerType.Credit,
+                    Amount = order.TotalAmount,
+                    OrderId = order.Id,
+                    Description = $"Collected amount via COD for order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(adminCodCreditLedger);
+
+                // Admin Entry 2: Payout to Driver (retained by driver)
+                var adminDriverPayoutLedger = new Domain.Entities.LedgerEntry
+                {
+                    EntityId = adminId,
+                    EntityType = Domain.Enums.LedgerEntityType.Admin,
+                    Type = Domain.Enums.LedgerType.Debit,
+                    Amount = order.DeliveryFee,
+                    OrderId = order.Id,
+                    Description = $"Payout to Driver (Retained from COD) for order #{order.Id.ToString().Substring(0, 8)}"
+                };
+                _context.LedgerEntries.Add(adminDriverPayoutLedger);
             }
             else
             {

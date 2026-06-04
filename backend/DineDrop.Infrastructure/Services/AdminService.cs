@@ -75,10 +75,22 @@ namespace DineDrop.Infrastructure.Services
             var totalRestaurants = await _context.Users.CountAsync(u => u.Role == UserRole.Restaurant && u.ApprovalStatus == ApprovalStatus.Approved);
             var pendingRequests = await _context.Users.CountAsync(u => u.Role == UserRole.Restaurant && u.ApprovalStatus == ApprovalStatus.Pending);
             var totalUsers = await _context.Users.CountAsync(u => u.Role == UserRole.User);
-            var activeOrders = await _context.Orders.CountAsync(o => o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled);
+            var activeOrders = await _context.Orders.CountAsync(o => 
+                o.Status == OrderStatus.Placed || 
+                o.Status == OrderStatus.Accepted || 
+                o.Status == OrderStatus.Preparing || 
+                o.Status == OrderStatus.Ready || 
+                o.Status == OrderStatus.Picked);
+                
             var adminWallet = await _context.Wallets.FirstOrDefaultAsync(w => w.User.Role == UserRole.Admin);
             var totalRevenue = adminWallet?.Balance ?? 0m;
-            var totalDrivers = await _context.Users.CountAsync(u => u.Role == UserRole.Driver && u.ApprovalStatus == ApprovalStatus.Approved);
+            
+            // Only count drivers who are currently online (IsAvailable == true) and not blocked
+            var totalDrivers = await _context.Drivers.CountAsync(d => 
+                d.IsAvailable && 
+                d.User.ApprovalStatus == ApprovalStatus.Approved && 
+                !d.User.IsBlocked);
+                
             var pendingDrivers = await _context.Users.CountAsync(u => u.Role == UserRole.Driver && u.ApprovalStatus == ApprovalStatus.Pending);
 
             return new AdminStatsDto

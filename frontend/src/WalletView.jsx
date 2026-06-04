@@ -5,6 +5,10 @@ const WalletView = ({ role = 'user' }) => {
   const [loading, setLoading] = useState(true);
   const [expandedOrders, setExpandedOrders] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
+  const [showTopupModal, setShowTopupModal] = useState(false);
+  const [topupAmount, setTopupAmount] = useState('');
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
   const itemsPerPage = 8;
 
   const toggleDetails = (id) => {
@@ -31,6 +35,86 @@ const WalletView = ({ role = 'user' }) => {
     }
   };
 
+  const handleTopup = async () => {
+    if (!topupAmount || topupAmount <= 0) return;
+    try {
+      // 1. Create Order on Backend for Razorpay amount
+      const rzpOrderResp = await fetch('http://localhost:5070/api/user/wallet/create-razorpay-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: parseFloat(topupAmount) }),
+        credentials: 'include'
+      });
+      if (!rzpOrderResp.ok) throw new Error("Failed to create razorpay order");
+      
+      const { orderId } = await rzpOrderResp.json();
+      
+      // 2. Open Razorpay Checkout
+      const options = {
+        key: "rzp_test_SwdCmzSaHtuMRq", // Matching backend key
+        amount: parseFloat(topupAmount) * 100, // amount in paisa
+        currency: "INR",
+        name: "DineDrop Wallet",
+        description: "Add funds to wallet",
+        order_id: orderId,
+        handler: async function (response) {
+          // 3. Verify Payment on Backend
+          const verifyResp = await fetch('http://localhost:5070/api/user/wallet/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                amount: parseFloat(topupAmount),
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+            }),
+            credentials: 'include'
+          });
+          if (verifyResp.ok) {
+            alert('Payment Successful! Funds added to wallet.');
+            setTopupAmount('');
+            setShowTopupModal(false);
+            fetchWallet();
+          } else {
+            alert('Payment verification failed.');
+          }
+        },
+        theme: { color: "#00f3ff" }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+
+    } catch (e) {
+      console.error(e);
+      alert('Error initiating payment. Please make sure the Razorpay script is loaded.');
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawAmount || withdrawAmount <= 0) return;
+    try {
+      const response = await fetch('http://localhost:5070/api/user/wallet/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: parseFloat(withdrawAmount) }),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        alert(`Successfully withdrew ₹${withdrawAmount} to Bank Account!`);
+        setWithdrawAmount('');
+        setShowWithdrawModal(false);
+        fetchWallet();
+      } else {
+        const err = await response.json();
+        alert('Failed to withdraw: ' + (err.message || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error initiating withdrawal.');
+    }
+  };
+
   if (loading) {
     return <div style={{ color: '#fff' }}>Loading Wallet...</div>;
   }
@@ -41,9 +125,23 @@ const WalletView = ({ role = 'user' }) => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', color: '#fff' }}>
-      <div style={{ background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(0, 243, 255, 0.05))', border: '1px solid rgba(0, 243, 255, 0.2)', padding: '40px', borderRadius: '24px', textAlign: 'center', marginBottom: '30px' }}>
+      <div style={{ background: 'linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(0, 243, 255, 0.05))', border: '1px solid rgba(0, 243, 255, 0.2)', padding: '40px', borderRadius: '24px', textAlign: 'center', marginBottom: '30px', position: 'relative' }}>
         <h2 style={{ margin: 0, fontSize: '1rem', color: '#00f3ff', letterSpacing: '2px', textTransform: 'uppercase' }}>Available Balance</h2>
         <h1 style={{ margin: '10px 0 0', fontSize: '3.5rem', fontWeight: '900', color: '#fff' }}>₹{wallet.balance.toFixed(2)}</h1>
+        <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={() => setShowWithdrawModal(true)}
+            style={{ padding: '10px 20px', background: 'transparent', color: '#ff4d4d', border: '1px solid rgba(255,77,77,0.3)', borderRadius: '12px', fontWeight: '800', cursor: 'pointer' }}
+          >
+            - Withdraw
+          </button>
+          <button 
+            onClick={() => setShowTopupModal(true)}
+            style={{ padding: '10px 20px', background: '#00f3ff', color: '#000', border: 'none', borderRadius: '12px', fontWeight: '800', cursor: 'pointer' }}
+          >
+            + Top Up
+          </button>
+        </div>
       </div>
 
       <h3 style={{ fontSize: '1.2rem', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>Transaction History</h3>
@@ -211,6 +309,68 @@ const WalletView = ({ role = 'user' }) => {
           </>
         );
       })()}
+
+      {/* Topup Modal */}
+      {showTopupModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ background: '#121212', padding: '30px', borderRadius: '20px', minWidth: '350px', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <h3 style={{ margin: '0 0 20px', fontSize: '1.4rem' }}>Top Up Wallet</h3>
+            <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '10px' }}>Enter amount to add via Razorpay (Test Mode)</p>
+            <input 
+              type="number" 
+              placeholder="Amount (₹)"
+              value={topupAmount}
+              onChange={(e) => setTopupAmount(e.target.value)}
+              style={{ width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '1.2rem', marginBottom: '20px' }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={handleTopup}
+                style={{ flex: 1, padding: '12px', background: '#00f3ff', color: '#000', border: 'none', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                Proceed to Pay
+              </button>
+              <button 
+                onClick={() => setShowTopupModal(false)}
+                style={{ padding: '12px 20px', background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Withdraw Modal */}
+      {showWithdrawModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ background: '#121212', padding: '30px', borderRadius: '20px', minWidth: '350px', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <h3 style={{ margin: '0 0 20px', fontSize: '1.4rem' }}>Withdraw Funds</h3>
+            <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '10px' }}>Enter amount to withdraw to linked Bank Account</p>
+            <input 
+              type="number" 
+              placeholder="Amount (₹)"
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+              style={{ width: '100%', padding: '15px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '1.2rem', marginBottom: '20px' }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={handleWithdraw}
+                style={{ flex: 1, padding: '12px', background: '#ff4d4d', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                Confirm Withdrawal
+              </button>
+              <button 
+                onClick={() => setShowWithdrawModal(false)}
+                style={{ padding: '12px 20px', background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

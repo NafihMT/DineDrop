@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import WalletView from './WalletView';
 
 const AdminDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => {
@@ -353,6 +354,7 @@ const AdminDashboard = ({ onLogout }) => {
             { id: 'Orders', icon: '📦', label: 'Orders' },
             { id: 'Drivers', icon: '🛵', label: 'Drivers', badge: stats.pendingDrivers },
             { id: 'Offers', icon: '🏷️', label: 'Offers / Coupons' },
+            { id: 'Wallet', icon: '💳', label: 'Wallet' },
           ].map((item) => (
             <button
               key={item.id}
@@ -396,9 +398,9 @@ const AdminDashboard = ({ onLogout }) => {
         <header style={{ marginBottom: '48px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <div>
             <span style={{ color: '#00f3ff', fontWeight: '800', fontSize: '0.85rem', letterSpacing: '1px', textTransform: 'uppercase' }}>PLATFORM MANAGEMENT</span>
-            <h1 style={{ fontSize: '2.5rem', fontWeight: '900', marginTop: '6px', letterSpacing: '-0.5px' }}>{activeTab} Overview</h1>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginTop: '6px', letterSpacing: '-0.5px' }}>{activeTab} Overview</h1>
           </div>
-          {activeTab !== 'Dashboard' && (
+          {activeTab !== 'Dashboard' && activeTab !== 'Wallet' && (
             <input 
               type="text" 
               placeholder={`Search ${activeTab.toLowerCase()}...`}
@@ -931,6 +933,11 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
               </div>
             </div>
+          </div>
+        )}
+        {activeTab === 'Wallet' && (
+          <div style={{ animation: 'fadeIn 0.4s ease-out' }}>
+            <WalletView role="admin" />
           </div>
         )}
       </main>

@@ -142,6 +142,22 @@ namespace DineDrop.API.Controllers
             var newBalance = await _userService.AddWalletFundsAsync(userId, dto.Amount);
             return Ok(new { message = $"Successfully added ₹{dto.Amount:F2} to wallet.", newBalance });
         }
+
+        [Authorize]
+        [HttpPost("wallet/withdraw")]
+        public async Task<IActionResult> WithdrawFunds([FromBody] AddFundsDto dto)
+        {
+            var userId = GetUserId();
+            try
+            {
+                var newBalance = await _userService.WithdrawWalletFundsAsync(userId, dto.Amount);
+                return Ok(new { message = $"Successfully withdrew ₹{dto.Amount:F2} from wallet.", newBalance });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
         
         [Authorize]
         [HttpGet("wallet/details")]
